@@ -99,10 +99,12 @@ public final class WebSocketSubscriptionTransport implements SubscriptionTranspo
 
     @Override
     public void onOpen(WebSocket webSocket, Response response) {
-      WebSocketSubscriptionTransport delegate = delegateRef.get();
-      if (delegate != null) {
-        delegate.onOpen();
-      }
+      throw new RuntimeException("Seeing what happens when open throws an exception");
+
+//      WebSocketSubscriptionTransport delegate = delegateRef.get();
+//      if (delegate != null) {
+//        delegate.onOpen();
+//      }
     }
 
     @Override
