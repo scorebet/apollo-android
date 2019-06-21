@@ -8,6 +8,7 @@ import org.jetbrains.annotations.NotNull;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.WebSocket;
+import okhttp3.WebSocketListener;
 
 import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
 
@@ -51,7 +52,7 @@ public final class WebSocketSubscriptionTransport implements SubscriptionTranspo
   @Override
   public void send(OperationClientMessage message) {
     WebSocket socket = webSocket.get();
-    if (socket == null) {
+    if (true) {
       throw new IllegalStateException("Not connected");
     }
     socket.send(message.toJsonString());
