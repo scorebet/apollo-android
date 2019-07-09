@@ -237,7 +237,9 @@ public final class RealSubscriptionManager implements SubscriptionManager {
     } else if (message instanceof OperationServerMessage.Complete) {
       onCompleteServerMessage((OperationServerMessage.Complete) message);
     } else if (message instanceof OperationServerMessage.ConnectionError) {
-      disconnect(true);
+      // Jordan - Ignore connection errors, as they don't always mean the socket should be disconnected
+      // See https://github.com/apollographql/subscriptions-transport-ws/blob/master/PROTOCOL.md#gql_connection_error
+//      disconnect(true);
     } else if (message instanceof OperationServerMessage.ConnectionKeepAlive) {
       resetConnectionKeepAliveTimerTask();
     }
