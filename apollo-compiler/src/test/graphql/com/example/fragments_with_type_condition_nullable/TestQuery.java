@@ -20,6 +20,7 @@ import com.example.fragments_with_type_condition_nullable.fragment.HumanDetails;
 import java.lang.Object;
 import java.lang.Override;
 import java.lang.String;
+import java.lang.SuppressWarnings;
 import java.util.Arrays;
 import java.util.Collections;
 import org.jetbrains.annotations.NotNull;
@@ -136,6 +137,7 @@ public final class TestQuery implements Query<TestQuery.Data, TestQuery.Data, Op
       return this.luke;
     }
 
+    @SuppressWarnings("unchecked")
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -238,6 +240,7 @@ public final class TestQuery implements Query<TestQuery.Data, TestQuery.Data, Op
       return this.fragments;
     }
 
+    @SuppressWarnings("unchecked")
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -371,14 +374,8 @@ public final class TestQuery implements Query<TestQuery.Data, TestQuery.Data, Op
 
         @Override
         public @NotNull Fragments map(ResponseReader reader, @NotNull String conditionalType) {
-          HumanDetails humanDetails = null;
-          DroidDetails droidDetails = null;
-          if (HumanDetails.POSSIBLE_TYPES.contains(conditionalType)) {
-            humanDetails = humanDetailsFieldMapper.map(reader);
-          }
-          if (DroidDetails.POSSIBLE_TYPES.contains(conditionalType)) {
-            droidDetails = droidDetailsFieldMapper.map(reader);
-          }
+          HumanDetails humanDetails = humanDetailsFieldMapper.map(reader);
+          DroidDetails droidDetails = droidDetailsFieldMapper.map(reader);
           return new Fragments(humanDetails, droidDetails);
         }
       }
@@ -431,6 +428,7 @@ public final class TestQuery implements Query<TestQuery.Data, TestQuery.Data, Op
       return this.fragments;
     }
 
+    @SuppressWarnings("unchecked")
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -564,14 +562,8 @@ public final class TestQuery implements Query<TestQuery.Data, TestQuery.Data, Op
 
         @Override
         public @NotNull Fragments map(ResponseReader reader, @NotNull String conditionalType) {
-          HumanDetails humanDetails = null;
-          DroidDetails droidDetails = null;
-          if (HumanDetails.POSSIBLE_TYPES.contains(conditionalType)) {
-            humanDetails = humanDetailsFieldMapper.map(reader);
-          }
-          if (DroidDetails.POSSIBLE_TYPES.contains(conditionalType)) {
-            droidDetails = droidDetailsFieldMapper.map(reader);
-          }
+          HumanDetails humanDetails = humanDetailsFieldMapper.map(reader);
+          DroidDetails droidDetails = droidDetailsFieldMapper.map(reader);
           return new Fragments(humanDetails, droidDetails);
         }
       }

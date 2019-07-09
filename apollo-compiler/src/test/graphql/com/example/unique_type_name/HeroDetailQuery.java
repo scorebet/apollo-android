@@ -22,6 +22,7 @@ import java.lang.Double;
 import java.lang.Object;
 import java.lang.Override;
 import java.lang.String;
+import java.lang.SuppressWarnings;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -145,6 +146,7 @@ public final class HeroDetailQuery implements Query<HeroDetailQuery.Data, Option
       return this.heroDetailQuery;
     }
 
+    @SuppressWarnings("unchecked")
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -306,6 +308,7 @@ public final class HeroDetailQuery implements Query<HeroDetailQuery.Data, Option
       return this.height;
     }
 
+    @SuppressWarnings("unchecked")
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -450,6 +453,7 @@ public final class HeroDetailQuery implements Query<HeroDetailQuery.Data, Option
       return this.friends;
     }
 
+    @SuppressWarnings("unchecked")
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -581,6 +585,7 @@ public final class HeroDetailQuery implements Query<HeroDetailQuery.Data, Option
       return this.fragments;
     }
 
+    @SuppressWarnings("unchecked")
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -697,10 +702,7 @@ public final class HeroDetailQuery implements Query<HeroDetailQuery.Data, Option
 
         @Override
         public @NotNull Fragments map(ResponseReader reader, @NotNull String conditionalType) {
-          HeroDetails heroDetails = null;
-          if (HeroDetails.POSSIBLE_TYPES.contains(conditionalType)) {
-            heroDetails = heroDetailsFieldMapper.map(reader);
-          }
+          HeroDetails heroDetails = heroDetailsFieldMapper.map(reader);
           return new Fragments(Utils.checkNotNull(heroDetails, "heroDetails == null"));
         }
       }
@@ -767,6 +769,7 @@ public final class HeroDetailQuery implements Query<HeroDetailQuery.Data, Option
       return this.friends;
     }
 
+    @SuppressWarnings("unchecked")
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -882,6 +885,7 @@ public final class HeroDetailQuery implements Query<HeroDetailQuery.Data, Option
       return this.name;
     }
 
+    @SuppressWarnings("unchecked")
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override

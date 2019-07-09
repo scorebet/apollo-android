@@ -55,12 +55,13 @@ class ApolloPlugin implements Plugin<Project> {
     }
 
     project.extensions.create(ApolloExtension.NAME, ApolloExtension, project)
-    createSourceSetExtensions()
+    project.apollo.extensions.create(ApolloSourceSetExtension.NAME, ApolloSourceSetExtension, project)
 
     if (!useGlobalApolloCodegen) {
       project.tasks.create(ApolloCodegenInstallTask.NAME, ApolloCodegenInstallTask.class)
     }
 
+    createSourceSetExtensions()
     addApolloTasks()
   }
 
@@ -101,9 +102,15 @@ class ApolloPlugin implements Plugin<Project> {
     apolloIRGenTask.dependsOn(sourceSetIRTask)
     apolloClassGenTask.dependsOn(sourceSetClassTask)
 
-    JavaCompile compileTask = (JavaCompile) project.tasks.findByName("compile${taskName.capitalize()}Java")
-    compileTask.source += project.fileTree(sourceSetClassTask.outputDir)
-    compileTask.dependsOn(apolloClassGenTask)
+    // we use afterEvaluate here as we need to know the value of generateKotlinModels from addSourceSetTasks
+    // TODO we should avoid afterEvaluate usage
+    project.afterEvaluate {
+      if (project.apollo.generateKotlinModels.get() != true) {
+        JavaCompile compileTask = (JavaCompile) project.tasks.findByName("compile${taskName.capitalize()}Java")
+        compileTask.source += project.fileTree(sourceSetClassTask.outputDir)
+        compileTask.dependsOn(apolloClassGenTask)
+      }
+    }
 
     sourceSet.java.srcDir(sourceSetClassTask.outputDir)
 
@@ -138,11 +145,13 @@ class ApolloPlugin implements Plugin<Project> {
     if (useGlobalApolloCodegen) {
       return project.tasks.create(taskName, ApolloSystemCodegenGenerationTask) {
         sourceSets.each { sourceSet ->
+          sourceSet.graphql.exclude(project.apollo.sourceSet.exclude.get())
           inputs.files(sourceSet.graphql).skipWhenEmpty()
         }
         group = TASK_GROUP
         description = "Generate an IR file using apollo-codegen for ${sourceSetOrVariantName.capitalize()} GraphQL queries"
-        schemaFilePath = project.apollo.schemaFilePath
+        schemaFilePath = (project.apollo.sourceSet.schemaFile.get().length() == 0) ? project.apollo.schemaFilePath :
+            project.apollo.sourceSet.schemaFile
         outputPackageName = project.apollo.outputPackageName
         variant = sourceSetOrVariantName
         sourceSetNames = sourceSetNamesList.build()
@@ -151,12 +160,14 @@ class ApolloPlugin implements Plugin<Project> {
     } else {
       return project.tasks.create(taskName, ApolloLocalCodegenGenerationTask) {
         sourceSets.each { sourceSet ->
+          sourceSet.graphql.exclude(project.apollo.sourceSet.exclude.get())
           inputs.files(sourceSet.graphql).skipWhenEmpty()
         }
         group = TASK_GROUP
         description = "Generate an IR file using apollo-codegen for ${sourceSetOrVariantName.capitalize()} GraphQL queries"
         dependsOn(ApolloCodegenInstallTask.NAME)
-        schemaFilePath = project.apollo.schemaFilePath
+        schemaFilePath = (project.apollo.sourceSet.schemaFile.get().length() == 0) ? project.apollo.schemaFilePath :
+            project.apollo.sourceSet.schemaFile
         outputPackageName = project.apollo.outputPackageName
         variant = sourceSetOrVariantName
         sourceSetNames = sourceSetNamesList.build()
@@ -171,8 +182,7 @@ class ApolloPlugin implements Plugin<Project> {
       group = TASK_GROUP
       description = "Generate Android classes for ${name.capitalize()} GraphQL queries"
       dependsOn(getProject().getTasks().findByName(String.format(APOLLO_CODEGEN_GENERATE_TASK_NAME, name.capitalize())))
-      source = project.tasks.findByName(
-          String.format(APOLLO_CODEGEN_GENERATE_TASK_NAME, name.capitalize())).outputDir
+      source = project.tasks.findByName(String.format(APOLLO_CODEGEN_GENERATE_TASK_NAME, name.capitalize())).outputDir
       include "**${File.separatorChar}*API.json"
       customTypeMapping = project.apollo.customTypeMapping
       nullableValueType = project.apollo.nullableValueType
@@ -187,8 +197,7 @@ class ApolloPlugin implements Plugin<Project> {
 
   private void createSourceSetExtensions() {
     getSourceSets().all { sourceSet ->
-      sourceSet.extensions.create(GraphQLSourceDirectorySet.NAME, GraphQLSourceDirectorySet, sourceSet.name,
-          fileResolver)
+      sourceSet.extensions.create(GraphQLSourceDirectorySet.NAME, GraphQLSourceDirectorySet, sourceSet.name, fileResolver)
     }
   }
 

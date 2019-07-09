@@ -17,7 +17,8 @@ internal object KotlinCodeGen {
 
   val suppressWarningsAnnotation = AnnotationSpec
       .builder(Suppress::class)
-      .addMember("%S, %S, %S", "NAME_SHADOWING", "LocalVariableName", "RemoveExplicitTypeArguments")
+      .addMember("%S, %S, %S, %S", "NAME_SHADOWING", "LocalVariableName", "RemoveExplicitTypeArguments",
+          "NestedLambdaShadowedImplicitParameter")
       .build()
 
   fun deprecatedAnnotation(message: String) = AnnotationSpec
@@ -50,7 +51,7 @@ internal object KotlinCodeGen {
         packageName = typeRef.packageName,
         simpleName = typeRef.name
     )
-    is FieldType.Array -> List::class.asClassName().parameterizedBy(rawType.asTypeName(optional = true))
+    is FieldType.Array -> List::class.asClassName().parameterizedBy(rawType.asTypeName(optional = isOptional))
   }.let {
     if (optional) it.copy(nullable = true) else it.copy(nullable = false)
   }
@@ -202,8 +203,12 @@ internal object KotlinCodeGen {
             .beginControlFlow("%L.readConditional(%L) { conditionalType, reader ->", reader, field)
             .add(
                 fields.map { field ->
-                  CodeBlock.of("val %L = if (%T.POSSIBLE_TYPES.contains(conditionalType)) %T(reader) else null",
-                      field.name, field.type.asTypeName(), field.type.asTypeName())
+                  if (field.isOptional) {
+                    CodeBlock.of("val %L = if (%T.POSSIBLE_TYPES.contains(conditionalType)) %T(reader) else null",
+                        field.name, field.type.asTypeName(), field.type.asTypeName())
+                  } else {
+                     CodeBlock.of("val %L = %T(reader)", field.name, field.type.asTypeName())
+                  }
                 }.joinToCode(separator = "\n", suffix = "\n")
             )
             .addStatement("%L(", name)
@@ -213,7 +218,7 @@ internal object KotlinCodeGen {
                   if (field.isOptional) {
                     CodeBlock.of("%L = %L", field.name, field.name)
                   } else {
-                    CodeBlock.of("%L = %L!!", field.name, field.name)
+                    CodeBlock.of("%L = %L", field.name, field.name)
                   }
 
                 }.joinToCode(separator = ",\n", suffix = "\n")

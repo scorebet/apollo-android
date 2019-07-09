@@ -1,6 +1,5 @@
 package com.apollographql.apollo.compiler.codegen.kotlin
 
-import com.apollographql.apollo.compiler.ClassNames
 import com.apollographql.apollo.compiler.ast.CustomTypes
 import com.apollographql.apollo.compiler.ast.builder.ast
 import com.apollographql.apollo.compiler.formatPackageName
@@ -50,7 +49,7 @@ class GraphQLKompiler(
     return CustomTypes(
         typeDeclarations
             .filter { it.kind == TypeDeclaration.KIND_SCALAR_TYPE }
-            .associate { it.name to (this[it.name] ?: ClassNames.OBJECT.toString()) }
+            .associate { it.name to (this[it.name] ?: Any::class.asClassName().canonicalName) }
             .plus(idScalarTypeMap)
     )
   }

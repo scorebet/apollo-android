@@ -18,6 +18,7 @@ internal fun InputType.typeSpec() =
         .classBuilder(name)
         .applyIf(description.isNotBlank()) { addKdoc("%L\n", description) }
         .addAnnotation(suppressWarningsAnnotation)
+        .addModifiers(KModifier.DATA)
         .addSuperinterface(com.apollographql.apollo.api.InputType::class)
         .primaryConstructor(primaryConstructorSpec)
         .addProperties(fields.map { field -> field.asPropertySpec(initializer = CodeBlock.of(field.name)) })
@@ -131,29 +132,22 @@ internal val InputType.Field.writeCodeBlock: CodeBlock
               .beginControlFlow("if (%L.defined)", name)
               .add("writer.writeList(%S, %L.value?.let { value ->\n", schemaName, name)
               .indent()
-              .add("%T { listItemWriter ->\n", InputFieldWriter.ListWriter::class)
-              .indent()
-              .add("value.forEach { value ->\n")
-              .indent()
-              .add(type.rawType.writeListItem)
-              .unindent()
-              .add("}\n")
-              .unindent()
-              .add("}\n")
+              .beginControlFlow("%T { listItemWriter ->", InputFieldWriter.ListWriter::class)
+              .beginControlFlow("value.forEach { value ->")
+              .add(type.rawType.writeListItem(type.isOptional))
+              .endControlFlow()
+              .endControlFlow()
               .unindent()
               .add("})\n")
               .endControlFlow()
         } else {
           codeBlockBuilder
-              .add("writer.writeList(%S) { listItemWriter ->\n", schemaName)
-              .indent()
-              .add("%L?.forEach { value ->\n", name)
-              .indent()
-              .add(type.rawType.writeListItem)
-              .unindent()
-              .add("}\n")
-              .unindent()
-              .add("}\n")
+              .beginControlFlow("writer.writeList(%S) { listItemWriter ->", schemaName)
+              .applyIf(isOptional) { beginControlFlow("%L?.forEach { value ->", name) }
+              .applyIf(!isOptional) { beginControlFlow("%L.forEach { value ->", name) }
+              .add(type.rawType.writeListItem(type.isOptional))
+              .endControlFlow()
+              .endControlFlow()
         }
 
         codeBlockBuilder.build()
@@ -162,30 +156,28 @@ internal val InputType.Field.writeCodeBlock: CodeBlock
     }
   }
 
-private val FieldType.writeListItem: CodeBlock
-  get() {
-    return when (this) {
-      is FieldType.Scalar -> when (this) {
-        is FieldType.Scalar.String -> CodeBlock.of("listItemWriter.writeString(value)\n")
-        is FieldType.Scalar.Int -> CodeBlock.of("listItemWriter.writeInt(value)\n")
-        is FieldType.Scalar.Boolean -> CodeBlock.of("listItemWriter.writeBoolean(value)\n")
-        is FieldType.Scalar.Float -> CodeBlock.of("listItemWriter.writeDouble(value)\n")
-        is FieldType.Scalar.Enum -> CodeBlock.of("listItemWriter.writeString(value?.rawValue)\n")
-        is FieldType.Scalar.Custom -> CodeBlock.of("listItemWriter.writeCustom(%T.%L, value)\n",
-            customEnumType.asTypeName(), customEnumConst)
-      }
-      is FieldType.Object -> CodeBlock.of("listItemWriter.writeObject(value?.marshaller())\n")
-      is FieldType.Array -> CodeBlock.builder()
-          .add("listItemWriter.writeList{ listItemWriter-> \n")
-          .indent()
-          .add("value?.forEach { value ->\n")
-          .indent()
-          .add(rawType.writeListItem)
-          .unindent()
-          .add("}\n")
-          .unindent()
-          .add("}\n")
-          .build()
-      else -> throw IllegalArgumentException("Unsupported input object field type: $this")
+private fun FieldType.writeListItem(isOptional: Boolean): CodeBlock {
+  return when (this) {
+    is FieldType.Scalar -> when (this) {
+      is FieldType.Scalar.String -> CodeBlock.of("listItemWriter.writeString(value)\n")
+      is FieldType.Scalar.Int -> CodeBlock.of("listItemWriter.writeInt(value)\n")
+      is FieldType.Scalar.Boolean -> CodeBlock.of("listItemWriter.writeBoolean(value)\n")
+      is FieldType.Scalar.Float -> CodeBlock.of("listItemWriter.writeDouble(value)\n")
+      is FieldType.Scalar.Enum -> CodeBlock.of("listItemWriter.writeString(value%L.rawValue)\n",
+          if (isOptional) "?" else "")
+      is FieldType.Scalar.Custom -> CodeBlock.of("listItemWriter.writeCustom(%T.%L, value)\n",
+          customEnumType.asTypeName(), customEnumConst)
     }
+    is FieldType.Object -> {
+      CodeBlock.of("listItemWriter.writeObject(value%L.marshaller())\n", if (isOptional) "?" else "")
+    }
+    is FieldType.Array -> CodeBlock.builder()
+        .beginControlFlow("listItemWriter.writeList { listItemWriter ->")
+        .beginControlFlow("value%L.forEach { value ->", if (isOptional) "?" else "")
+        .add(rawType.writeListItem(this.isOptional))
+        .endControlFlow()
+        .endControlFlow()
+        .build()
+    else -> throw IllegalArgumentException("Unsupported input object field type: $this")
   }
+}

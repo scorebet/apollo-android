@@ -17,24 +17,31 @@ import com.apollographql.apollo.api.ResponseWriter;
 import com.apollographql.apollo.api.internal.Optional;
 import com.apollographql.apollo.api.internal.Utils;
 import com.example.simple_fragment.fragment.HeroDetails;
+import com.example.simple_fragment.fragment.HumanDetails;
 import java.lang.Object;
 import java.lang.Override;
 import java.lang.String;
+import java.lang.SuppressWarnings;
 import java.util.Arrays;
 import java.util.Collections;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery.Data>, Operation.Variables> {
-  public static final String OPERATION_ID = "fb34e1f33db46408de360dadc7679f93aa0bd4259eacdff7a4c9c8032c89d60b";
+  public static final String OPERATION_ID = "f258982f7e2b12d61c678aa68c0baee6ae552768b670dd2f56b92d36c1cfd83b";
 
   public static final String QUERY_DOCUMENT = "query TestQuery {\n"
       + "  hero {\n"
       + "    __typename\n"
       + "    ...HeroDetails\n"
+      + "    ...HumanDetails\n"
       + "  }\n"
       + "}\n"
       + "fragment HeroDetails on Character {\n"
+      + "  __typename\n"
+      + "  name\n"
+      + "}\n"
+      + "fragment HumanDetails on Human {\n"
       + "  __typename\n"
       + "  name\n"
       + "}";
@@ -116,6 +123,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       return this.hero;
     }
 
+    @SuppressWarnings("unchecked")
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -179,6 +187,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
       ResponseField.forFragment("__typename", "__typename", Arrays.asList("Human",
+      "Human",
       "Droid"))
     };
 
@@ -205,6 +214,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       return this.fragments;
     }
 
+    @SuppressWarnings("unchecked")
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -256,18 +266,25 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     public static class Fragments {
       final @NotNull HeroDetails heroDetails;
 
+      final Optional<HumanDetails> humanDetails;
+
       private transient volatile String $toString;
 
       private transient volatile int $hashCode;
 
       private transient volatile boolean $hashCodeMemoized;
 
-      public Fragments(@NotNull HeroDetails heroDetails) {
+      public Fragments(@NotNull HeroDetails heroDetails, @Nullable HumanDetails humanDetails) {
         this.heroDetails = Utils.checkNotNull(heroDetails, "heroDetails == null");
+        this.humanDetails = Optional.fromNullable(humanDetails);
       }
 
       public @NotNull HeroDetails heroDetails() {
         return this.heroDetails;
+      }
+
+      public Optional<HumanDetails> humanDetails() {
+        return this.humanDetails;
       }
 
       public ResponseFieldMarshaller marshaller() {
@@ -278,6 +295,10 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
             if ($heroDetails != null) {
               $heroDetails.marshaller().marshal(writer);
             }
+            final HumanDetails $humanDetails = humanDetails.isPresent() ? humanDetails.get() : null;
+            if ($humanDetails != null) {
+              $humanDetails.marshaller().marshal(writer);
+            }
           }
         };
       }
@@ -286,7 +307,8 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       public String toString() {
         if ($toString == null) {
           $toString = "Fragments{"
-            + "heroDetails=" + heroDetails
+            + "heroDetails=" + heroDetails + ", "
+            + "humanDetails=" + humanDetails
             + "}";
         }
         return $toString;
@@ -299,7 +321,8 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
         }
         if (o instanceof Fragments) {
           Fragments that = (Fragments) o;
-          return this.heroDetails.equals(that.heroDetails);
+          return this.heroDetails.equals(that.heroDetails)
+           && this.humanDetails.equals(that.humanDetails);
         }
         return false;
       }
@@ -310,6 +333,8 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
           int h = 1;
           h *= 1000003;
           h ^= heroDetails.hashCode();
+          h *= 1000003;
+          h ^= humanDetails.hashCode();
           $hashCode = h;
           $hashCodeMemoized = true;
         }
@@ -319,13 +344,16 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       public static final class Mapper implements FragmentResponseFieldMapper<Fragments> {
         final HeroDetails.Mapper heroDetailsFieldMapper = new HeroDetails.Mapper();
 
+        final HumanDetails.Mapper humanDetailsFieldMapper = new HumanDetails.Mapper();
+
         @Override
         public @NotNull Fragments map(ResponseReader reader, @NotNull String conditionalType) {
-          HeroDetails heroDetails = null;
-          if (HeroDetails.POSSIBLE_TYPES.contains(conditionalType)) {
-            heroDetails = heroDetailsFieldMapper.map(reader);
+          HeroDetails heroDetails = heroDetailsFieldMapper.map(reader);
+          HumanDetails humanDetails = null;
+          if (HumanDetails.POSSIBLE_TYPES.contains(conditionalType)) {
+            humanDetails = humanDetailsFieldMapper.map(reader);
           }
-          return new Fragments(Utils.checkNotNull(heroDetails, "heroDetails == null"));
+          return new Fragments(Utils.checkNotNull(heroDetails, "heroDetails == null"), humanDetails);
         }
       }
     }

@@ -1,4 +1,5 @@
 module.exports = {
+  pathPrefix: '/docs/android',
   __experimentalThemes: [
     {
       resolve: 'gatsby-theme-apollo-docs',
@@ -6,8 +7,6 @@ module.exports = {
         root: __dirname,
         subtitle: 'Apollo Android Guide',
         description: 'A guide to using Apollo with Android',
-        contentDir: 'docs/source',
-        basePath: '/docs/android',
         githubRepo: 'apollographql/apollo-android',
         sidebarCategories: {
           null: [
@@ -15,7 +14,8 @@ module.exports = {
           ],
           Essentials: [
             'essentials/get-started',
-            'essentials/queries'
+            'essentials/queries',
+            'essentials/mutations'
           ]
         }
       }

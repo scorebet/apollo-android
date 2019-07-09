@@ -7,6 +7,7 @@ import com.apollographql.apollo.cache.ApolloCacheHeaders;
 import com.apollographql.apollo.cache.CacheHeaders;
 import com.apollographql.apollo.cache.http.ApolloHttpCache;
 import com.apollographql.apollo.cache.http.DiskLruHttpCacheStore;
+import com.apollographql.apollo.cache.http.internal.FileSystem;
 import com.apollographql.apollo.exception.ApolloException;
 import com.apollographql.apollo.exception.ApolloHttpException;
 import com.apollographql.apollo.integration.httpcache.AllFilmsQuery;
@@ -16,12 +17,7 @@ import com.apollographql.apollo.integration.httpcache.type.CustomType;
 import com.apollographql.apollo.response.CustomTypeAdapter;
 import com.apollographql.apollo.response.CustomTypeValue;
 import com.apollographql.apollo.rx2.Rx2Apollo;
-
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-
+import io.reactivex.functions.Predicate;
 import java.io.File;
 import java.io.IOException;
 import java.text.ParseException;
@@ -29,17 +25,16 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
-
-import io.reactivex.functions.Predicate;
 import okhttp3.Dispatcher;
 import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
-import okhttp3.RequestBody;
-import okhttp3.internal.io.FileSystem;
-import okhttp3.internal.io.InMemoryFileSystem;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okio.Buffer;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
 
 import static com.google.common.truth.Truth.assertThat;
 
@@ -656,10 +651,7 @@ public class HttpCacheTest {
   }
 
   private void checkCachedResponse(String fileName) throws IOException {
-    RequestBody requestBody = lastHttRequest.body();
-    Buffer buffer = new Buffer();
-    requestBody.writeTo(buffer);
-    String cacheKey = buffer.readByteString().md5().hex();
+    String cacheKey = lastHttRequest.headers(HttpCache.CACHE_KEY_HEADER).get(0);
     okhttp3.Response response = apolloClient.cachedHttpResponse(cacheKey);
     assertThat(response).isNotNull();
     assertThat(response.body().source().readUtf8()).isEqualTo(Utils.readFileToString(getClass(), fileName));

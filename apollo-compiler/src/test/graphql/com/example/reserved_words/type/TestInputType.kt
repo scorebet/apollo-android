@@ -11,9 +11,12 @@ import com.apollographql.apollo.api.InputType
 import kotlin.Boolean
 import kotlin.Suppress
 
-@Suppress("NAME_SHADOWING", "LocalVariableName", "RemoveExplicitTypeArguments")
-class TestInputType(val private_: Input<Boolean> = Input.optional(null)) : InputType {
-    override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller { writer ->
-        if (private_.defined) writer.writeBoolean("private", private_.value)
-    }
+@Suppress("NAME_SHADOWING", "LocalVariableName", "RemoveExplicitTypeArguments",
+    "NestedLambdaShadowedImplicitParameter")
+data class TestInputType(
+  val private_: Input<Boolean> = Input.optional(null)
+) : InputType {
+  override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller { writer ->
+    if (private_.defined) writer.writeBoolean("private", private_.value)
+  }
 }

@@ -73,6 +73,8 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
   final AtomicReference<CallState> state = new AtomicReference<>(IDLE);
   final AtomicReference<Callback<T>> originalCallback = new AtomicReference<>();
   final Optional<Operation.Data> optimisticUpdates;
+  final boolean useHttpGetMethodForQueries;
+  final boolean useHttpGetMethodForPersistedQueries;
 
   public static <T> Builder<T> builder() {
     return new Builder<>();
@@ -114,9 +116,12 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
           .callTracker(builder.tracker)
           .build());
     }
+    useHttpGetMethodForQueries = builder.useHttpGetMethodForQueries;
     enableAutoPersistedQueries = builder.enableAutoPersistedQueries;
+    useHttpGetMethodForPersistedQueries = builder.useHttpGetMethodForPersistedQueries;
     interceptorChain = prepareInterceptorChain(operation);
     optimisticUpdates = builder.optimisticUpdates;
+
   }
 
   @Override public void enqueue(@Nullable final Callback<T> responseCallback) {
@@ -136,6 +141,8 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
         .requestHeaders(requestHeaders)
         .fetchFromCache(false)
         .optimisticUpdates(optimisticUpdates)
+        .useHttpGetMethodForQueries(useHttpGetMethodForQueries)
+        .autoPersistQueries(enableAutoPersistedQueries)
         .build();
     interceptorChain.proceedAsync(request, dispatcher, interceptorCallbackProxy());
   }
@@ -307,6 +314,7 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
         .refetchQueryNames(refetchQueryNames)
         .refetchQueries(refetchQueries)
         .enableAutoPersistedQueries(enableAutoPersistedQueries)
+        .useHttpGetMethodForPersistedQueries(useHttpGetMethodForPersistedQueries)
         .optimisticUpdates(optimisticUpdates);
   }
 
@@ -365,15 +373,14 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
   }
 
   private ApolloInterceptorChain prepareInterceptorChain(Operation operation) {
-    List<ApolloInterceptor> interceptors = new ArrayList<>();
     HttpCachePolicy.Policy httpCachePolicy = operation instanceof Query ? this.httpCachePolicy : null;
     ResponseFieldMapper responseFieldMapper = responseFieldMapperFactory.create(operation);
 
-    interceptors.addAll(applicationInterceptors);
+    List<ApolloInterceptor> interceptors = new ArrayList<>(applicationInterceptors);
     interceptors.add(responseFetcher.provideInterceptor(logger));
     interceptors.add(new ApolloCacheInterceptor(apolloStore, responseFieldMapper, dispatcher, logger));
     if (operation instanceof Query && enableAutoPersistedQueries) {
-      interceptors.add(new ApolloAutoPersistedQueryInterceptor(logger));
+      interceptors.add(new ApolloAutoPersistedQueryInterceptor(logger, useHttpGetMethodForPersistedQueries));
     }
     interceptors.add(new ApolloParseInterceptor(httpCache, apolloStore.networkResponseNormalizer(), responseFieldMapper,
         scalarTypeAdapters, logger));
@@ -404,6 +411,8 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
     ApolloCallTracker tracker;
     boolean enableAutoPersistedQueries;
     Optional<Operation.Data> optimisticUpdates = Optional.absent();
+    boolean useHttpGetMethodForQueries;
+    boolean useHttpGetMethodForPersistedQueries;
 
     public Builder<T> operation(Operation operation) {
       this.operation = operation;
@@ -498,6 +507,16 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
 
     public Builder<T> optimisticUpdates(Optional<Operation.Data> optimisticUpdates) {
       this.optimisticUpdates = optimisticUpdates;
+      return this;
+    }
+
+    public Builder<T> useHttpGetMethodForQueries(boolean useHttpGetMethodForQueries) {
+      this.useHttpGetMethodForQueries = useHttpGetMethodForQueries;
+      return this;
+    }
+
+    public Builder<T> useHttpGetMethodForPersistedQueries(boolean useHttpGetMethodForPersistedQueries) {
+      this.useHttpGetMethodForPersistedQueries = useHttpGetMethodForPersistedQueries;
       return this;
     }
 

@@ -32,12 +32,13 @@ internal sealed class FieldType {
 
   data class InlineFragment(val typeRef: TypeRef, val fragmentRefs: List<TypeRef>) : FieldType()
 
-  data class Array(val rawType: FieldType) : FieldType()
+  data class Array(val rawType: FieldType, val isOptional: Boolean) : FieldType()
 }
 
 internal data class OperationType(
     val name: String,
     val type: Type,
+    val operationName: String,
     val operationId: String,
     val queryDocument: String,
     val variables: InputType,
