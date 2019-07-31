@@ -201,6 +201,9 @@ public interface ApolloInterceptor {
 
       public Builder autoPersistQueries(boolean autoPersistQueries) {
         this.autoPersistQueries = autoPersistQueries;
+        if (autoPersistQueries) {
+          sendQueryDocument = false;
+        }
         return this;
       }
 

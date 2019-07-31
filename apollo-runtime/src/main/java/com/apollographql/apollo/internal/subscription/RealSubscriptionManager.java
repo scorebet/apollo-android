@@ -60,10 +60,11 @@ public final class RealSubscriptionManager implements SubscriptionManager {
     }
   };
   private final List<OnStateChangeListener> onStateChangeListeners = new CopyOnWriteArrayList<>();
+  private boolean enableAutoPersistedQueries;
 
   public RealSubscriptionManager(@NotNull ScalarTypeAdapters scalarTypeAdapters,
-      @NotNull final SubscriptionTransport.Factory transportFactory, @NotNull Map<String, Object> connectionParams,
-      @NotNull final Executor dispatcher, long connectionHeartbeatTimeoutMs) {
+                                 @NotNull final SubscriptionTransport.Factory transportFactory, @NotNull Map<String, Object> connectionParams,
+                                 @NotNull final Executor dispatcher, long connectionHeartbeatTimeoutMs, boolean enableAutoPersistedQueries) {
     checkNotNull(scalarTypeAdapters, "scalarTypeAdapters == null");
     checkNotNull(transportFactory, "transportFactory == null");
     checkNotNull(dispatcher, "dispatcher == null");
@@ -73,6 +74,7 @@ public final class RealSubscriptionManager implements SubscriptionManager {
     this.transport = transportFactory.create(new SubscriptionTransportCallback(this, dispatcher));
     this.dispatcher = dispatcher;
     this.connectionHeartbeatTimeoutMs = connectionHeartbeatTimeoutMs;
+    this.enableAutoPersistedQueries = enableAutoPersistedQueries;
   }
 
   @Override
@@ -160,7 +162,7 @@ public final class RealSubscriptionManager implements SubscriptionManager {
         setStateAndNotify(State.CONNECTING);
         transport.connect();
       } else if (state == State.ACTIVE) {
-        transport.send(new OperationClientMessage.Start(subscriptionId, subscription, scalarTypeAdapters));
+        transport.send(new OperationClientMessage.Start(subscriptionId, subscription, scalarTypeAdapters, enableAutoPersistedQueries));
       }
     }
   }
@@ -336,7 +338,7 @@ public final class RealSubscriptionManager implements SubscriptionManager {
       for (Map.Entry<String, SubscriptionRecord> entry : subscriptions.entrySet()) {
         String subscriptionId = entry.getKey();
         Subscription<?, ?, ?> subscription = entry.getValue().subscription;
-        transport.send(new OperationClientMessage.Start(subscriptionId, subscription, scalarTypeAdapters));
+        transport.send(new OperationClientMessage.Start(subscriptionId, subscription, scalarTypeAdapters, enableAutoPersistedQueries));
       }
     }
   }

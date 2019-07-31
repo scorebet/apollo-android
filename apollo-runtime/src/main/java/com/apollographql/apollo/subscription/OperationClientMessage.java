@@ -61,18 +61,21 @@ public abstract class OperationClientMessage {
   public static final class Start extends OperationClientMessage {
     private static final String TYPE = "start";
     private static final String JSON_KEY_QUERY = "query";
+    private static final String JSON_KEY_ID = "id";
     private static final String JSON_KEY_VARIABLES = "variables";
     private static final String JSON_KEY_OPERATION_NAME = "operationName";
     private final ScalarTypeAdapters scalarTypeAdapters;
+    private boolean enableAutoPersistedQueries;
 
     public final String subscriptionId;
     public final Subscription<?, ?, ?> subscription;
 
     public Start(@NotNull String subscriptionId, @NotNull Subscription<?, ?, ?> subscription,
-        @NotNull ScalarTypeAdapters scalarTypeAdapters) {
+                 @NotNull ScalarTypeAdapters scalarTypeAdapters, boolean enableAutoPersistedQueries) {
       this.subscriptionId = checkNotNull(subscriptionId, "subscriptionId == null");
       this.subscription = checkNotNull(subscription, "subscription == null");
       this.scalarTypeAdapters = checkNotNull(scalarTypeAdapters, "scalarTypeAdapters == null");
+      this.enableAutoPersistedQueries = enableAutoPersistedQueries;
     }
 
     @Override public void writeToJson(@NotNull JsonWriter writer) throws IOException {
@@ -80,7 +83,11 @@ public abstract class OperationClientMessage {
       writer.name(JSON_KEY_ID).value(subscriptionId);
       writer.name(JSON_KEY_TYPE).value(TYPE);
       writer.name(JSON_KEY_PAYLOAD).beginObject();
-      writer.name(JSON_KEY_QUERY).value(subscription.queryDocument().replaceAll("\\n", ""));
+      if (enableAutoPersistedQueries) {
+        writer.name(JSON_KEY_ID).value(subscription.operationId());
+      } else {
+        writer.name(JSON_KEY_QUERY).value(subscription.queryDocument().replaceAll("\\n", ""));
+      }
       writer.name(JSON_KEY_VARIABLES).beginObject();
       subscription.variables().marshaller().marshal(new InputFieldJsonWriter(writer, scalarTypeAdapters));
       writer.endObject();
