@@ -55,7 +55,7 @@ class OperationTypeSpecBuilder(
   private fun TypeSpec.Builder.addOperationId(operation: Operation): TypeSpec.Builder {
     addField(FieldSpec.builder(ClassNames.STRING, OPERATION_ID_FIELD_NAME)
         .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-        .initializer("\$S", operation.sourceWithFragments?.filter { it != '\n' }?.sha256())
+        .initializer("\$S", operation.sourceWithFragments?.sha256())
         .build()
     )
 
