@@ -32,7 +32,7 @@ import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
  * A common configuration is to have secondary SQL cache.
  */
 public class LruNormalizedCache extends NormalizedCache {
-  protected final Cache<String, Record> lruCache;
+  private final Cache<String, Record> lruCache;
 
   public LruNormalizedCache(EvictionPolicy evictionPolicy) {
     final CacheBuilder<Object, Object> lruCacheBuilder = CacheBuilder.newBuilder();
@@ -133,6 +133,11 @@ public class LruNormalizedCache extends NormalizedCache {
       lruCache.put(apolloRecord.key(), oldRecord);
       return changedKeys;
     }
+  }
+
+  @Nullable
+  public Record getIfPresent(@NotNull final String key) {
+    return lruCache.getIfPresent(key);
   }
 
   @Override public Map<Class, Map<String, Record>> dump() {
