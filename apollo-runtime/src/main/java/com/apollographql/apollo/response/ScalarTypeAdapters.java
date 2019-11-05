@@ -3,6 +3,7 @@ package com.apollographql.apollo.response;
 import com.apollographql.apollo.api.FileUpload;
 import com.apollographql.apollo.api.ScalarType;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -12,23 +13,27 @@ import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
 
 public final class ScalarTypeAdapters {
   private static final Map<Class, CustomTypeAdapter> DEFAULT_ADAPTERS = defaultAdapters();
-  private final Map<ScalarType, CustomTypeAdapter> customAdapters;
+  private final Map<String, CustomTypeAdapter> customAdapters;
 
   public ScalarTypeAdapters(@NotNull Map<ScalarType, CustomTypeAdapter> customAdapters) {
-    this.customAdapters = checkNotNull(customAdapters, "customAdapters == null");
+    Map<ScalarType, CustomTypeAdapter> nonNullcustomAdapters = checkNotNull(customAdapters, "customAdapters == null");
+    this.customAdapters = new HashMap<>();
+    for (Map.Entry<ScalarType, CustomTypeAdapter> entry:nonNullcustomAdapters.entrySet()) {
+      this.customAdapters.put(entry.getKey().typeName(), entry.getValue());
+    }
   }
 
   @SuppressWarnings("unchecked") @NotNull public <T> CustomTypeAdapter<T> adapterFor(@NotNull ScalarType scalarType) {
     checkNotNull(scalarType, "scalarType == null");
 
-    CustomTypeAdapter<T> customTypeAdapter = customAdapters.get(scalarType);
+    CustomTypeAdapter<T> customTypeAdapter = customAdapters.get(scalarType.typeName());
     if (customTypeAdapter == null) {
       customTypeAdapter = DEFAULT_ADAPTERS.get(scalarType.javaType());
     }
 
     if (customTypeAdapter == null) {
       throw new IllegalArgumentException(String.format("Can't map GraphQL type: %s to: %s. Did you forget to add "
-          + "custom type adapter?", scalarType.typeName(), scalarType.javaType()));
+          + "a custom type adapter?", scalarType.typeName(), scalarType.javaType()));
     }
 
     return customTypeAdapter;
@@ -105,6 +110,11 @@ public final class ScalarTypeAdapters {
       @Override
       public CustomTypeValue encode(@NotNull FileUpload value) {
         return new CustomTypeValue.GraphQLString(null);
+      }
+    });
+    adapters.put(Object.class, new DefaultCustomTypeAdapter<Object>() {
+      @NotNull @Override public Object decode(@NotNull CustomTypeValue value) {
+        return value.value;
       }
     });
     return adapters;

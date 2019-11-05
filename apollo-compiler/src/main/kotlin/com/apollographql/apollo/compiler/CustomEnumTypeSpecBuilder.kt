@@ -39,7 +39,7 @@ class CustomEnumTypeSpecBuilder(
               .addModifiers(Modifier.PUBLIC)
               .apply {
                 if (context.suppressRawTypesWarning) {
-                  this.addAnnotation(com.apollographql.apollo.compiler.Annotations.SUPPRESS_RAW_VALUE_WARNING)
+                  addAnnotation(Annotations.SUPPRESS_RAW_VALUE_WARNING)
                 }
               }
               .addAnnotation(Override::class.java)
@@ -49,7 +49,6 @@ class CustomEnumTypeSpecBuilder(
           .build()
 
   companion object {
-    fun className(context: CodeGenerationContext): ClassName = ClassName.get(context.typesPackage, "CustomType")
+    fun className(context: CodeGenerationContext): ClassName = ClassName.get(context.packageNameProvider.typesPackageName, "CustomType")
   }
-
 }

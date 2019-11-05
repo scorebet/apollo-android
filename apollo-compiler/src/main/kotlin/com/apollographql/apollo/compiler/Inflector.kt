@@ -9,20 +9,12 @@ import java.util.regex.Pattern
  * The singularization methods were heavily based off rogueweb <link> https://code.google.com/archive/p/rogueweb/source</link>
  */
 
-fun String.formatPackageName(): String {
-  val parts = split(File.separatorChar)
-  (parts.size - 1 downTo 2)
-      .filter { parts[it - 2] == "src" && parts[it] == "graphql" }
-      .forEach { return parts.subList(it + 1, parts.size).dropLast(1).joinToString(".") }
-  throw IllegalArgumentException("Files must be organized like src/main/graphql/...")
-}
-
 fun String.singularize(): String {
   if (uncountable.contains(this.toLowerCase())) return this
 
   if (exclude.contains(this.toLowerCase())) return this
 
-  val irregular = irregular().firstOrNull() { this.toLowerCase() == it.component2() }
+  val irregular = irregular().firstOrNull { this.toLowerCase() == it.component2() }
   if (irregular != null) return irregular.component1()
 
   if (singularizationRules().find { match(it.component1(), this) } == null) return this

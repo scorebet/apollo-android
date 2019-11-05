@@ -12,6 +12,7 @@ import com.apollographql.apollo.api.ResponseField
 import com.apollographql.apollo.api.ResponseFieldMapper
 import com.apollographql.apollo.api.ResponseFieldMarshaller
 import com.apollographql.apollo.api.ResponseReader
+import com.apollographql.apollo.internal.QueryDocumentMinifier
 import com.example.java_beans_semantic_naming.fragment.HeroDetails
 import com.example.java_beans_semantic_naming.type.Episode
 import kotlin.Array
@@ -19,8 +20,8 @@ import kotlin.String
 import kotlin.Suppress
 import kotlin.collections.List
 
-@Suppress("NAME_SHADOWING", "LocalVariableName", "RemoveExplicitTypeArguments",
-    "NestedLambdaShadowedImplicitParameter")
+@Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
+    "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
 class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
   override fun operationId(): String = OPERATION_ID
   override fun queryDocument(): String = QUERY_DOCUMENT
@@ -66,7 +67,7 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
         val __typename = reader.readString(RESPONSE_FIELDS[0])
         val name = reader.readString(RESPONSE_FIELDS[1])
         val appearsIn = reader.readList<Episode>(RESPONSE_FIELDS[2]) {
-          Episode.safeValueOf(it.readString())
+          it.readString()?.let{ Episode.safeValueOf(it) }
         }
         val fragments = reader.readConditional(RESPONSE_FIELDS[3]) { conditionalType, reader ->
           val heroDetails = HeroDetails(reader)
@@ -119,42 +120,44 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
 
   companion object {
     const val OPERATION_ID: String =
-        "4f3cddab484b815b0c6e7999f362c5585f16fcde1011110fc3ae068f71614072"
+        "a2bc6502baa27d33261b6be530fcaecea248e26e4522c359e8dc6c62c10cafdc"
 
-    val QUERY_DOCUMENT: String = """
-        |query TestQuery {
-        |  hero {
-        |    __typename
-        |    name
-        |    ...HeroDetails
-        |    appearsIn
-        |  }
-        |}
-        |fragment HeroDetails on Character {
-        |  __typename
-        |  name
-        |  friendsConnection {
-        |    __typename
-        |    totalCount
-        |    edges {
-        |      __typename
-        |      node {
-        |        __typename
-        |        name
-        |      }
-        |    }
-        |    pageInfo {
-        |      __typename
-        |      hasNextPage
-        |    }
-        |    isEmpty
-        |  }
-        |  ... on Droid {
-        |    name
-        |    primaryFunction
-        |  }
-        |}
-        """.trimMargin()
+    val QUERY_DOCUMENT: String = QueryDocumentMinifier.minify(
+          """
+          |query TestQuery {
+          |  hero {
+          |    __typename
+          |    name
+          |    ...HeroDetails
+          |    appearsIn
+          |  }
+          |}
+          |fragment HeroDetails on Character {
+          |  __typename
+          |  name
+          |  friendsConnection {
+          |    __typename
+          |    totalCount
+          |    edges {
+          |      __typename
+          |      node {
+          |        __typename
+          |        name
+          |      }
+          |    }
+          |    pageInfo {
+          |      __typename
+          |      hasNextPage
+          |    }
+          |    isEmpty
+          |  }
+          |  ... on Droid {
+          |    name
+          |    primaryFunction
+          |  }
+          |}
+          """.trimMargin()
+        )
 
     val OPERATION_NAME: OperationName = OperationName { "TestQuery" }
   }

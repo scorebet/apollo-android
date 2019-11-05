@@ -18,17 +18,6 @@ import com.apollographql.apollo.internal.json.InputFieldJsonWriter;
 import com.apollographql.apollo.internal.json.JsonWriter;
 import com.apollographql.apollo.request.RequestHeaders;
 import com.apollographql.apollo.response.ScalarTypeAdapters;
-
-import java.io.File;
-import java.io.IOException;
-import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.concurrent.Executor;
-
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.HttpUrl;
@@ -39,6 +28,16 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import okio.Buffer;
 import okio.ByteString;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
 
@@ -48,7 +47,8 @@ import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
  * {@link ApolloInterceptorChain#proceedAsync(InterceptorRequest, Executor, CallBack)}
  * on the interceptor chain.
  */
-@SuppressWarnings("WeakerAccess") public final class ApolloServerInterceptor implements ApolloInterceptor {
+@SuppressWarnings("WeakerAccess")
+public final class ApolloServerInterceptor implements ApolloInterceptor {
   static final String HEADER_ACCEPT_TYPE = "Accept";
   static final String HEADER_CONTENT_TYPE = "Content-Type";
   static final String HEADER_APOLLO_OPERATION_ID = "X-APOLLO-OPERATION-ID";
@@ -63,7 +63,7 @@ import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
   final boolean prefetch;
   final ApolloLogger logger;
   final ScalarTypeAdapters scalarTypeAdapters;
-  volatile Call httpCall;
+  AtomicReference<Call> httpCallRef = new AtomicReference<>();
   volatile boolean disposed;
 
   public ApolloServerInterceptor(@NotNull HttpUrl serverUrl, @NotNull Call.Factory httpCallFactory,
@@ -80,57 +80,79 @@ import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
   @Override
   public void interceptAsync(@NotNull final InterceptorRequest request, @NotNull final ApolloInterceptorChain chain,
       @NotNull Executor dispatcher, @NotNull final CallBack callBack) {
-    if (disposed) return;
     dispatcher.execute(new Runnable() {
       @Override public void run() {
-        callBack.onFetch(FetchSourceType.NETWORK);
-
-        try {
-          if (request.useHttpGetMethodForQueries && request.operation instanceof Query) {
-            httpCall = httpGetCall(request.operation, request.cacheHeaders, request.requestHeaders,
-                request.sendQueryDocument, request.autoPersistQueries);
-          } else {
-            httpCall = httpPostCall(request.operation, request.cacheHeaders, request.requestHeaders,
-                request.sendQueryDocument, request.autoPersistQueries);
-          }
-
-        } catch (IOException e) {
-          logger.e(e, "Failed to prepare http call for operation %s", request.operation.name().name());
-          callBack.onFailure(new ApolloNetworkException("Failed to prepare http call", e));
-          return;
-        }
-
-        httpCall.enqueue(new Callback() {
-          @Override public void onFailure(@NotNull Call call, @NotNull IOException e) {
-            if (disposed) return;
-            logger.e(e, "Failed to execute http call for operation %s", request.operation.name().name());
-            callBack.onFailure(new ApolloNetworkException("Failed to execute http call", e));
-          }
-
-          @Override public void onResponse(@NotNull Call call, @NotNull Response response) throws IOException {
-            if (disposed) return;
-            callBack.onResponse(new ApolloInterceptor.InterceptorResponse(response));
-            callBack.onCompleted();
-          }
-        });
+        executeHttpCall(request, callBack);
       }
     });
   }
 
-  @Override public void dispose() {
+  @Override
+  public void dispose() {
     disposed = true;
-    Call httpCall = this.httpCall;
+
+    final Call httpCall = httpCallRef.getAndSet(null);
     if (httpCall != null) {
       httpCall.cancel();
     }
-    this.httpCall = null;
+  }
+
+  void executeHttpCall(@NotNull final InterceptorRequest request, @NotNull final CallBack callBack) {
+    if (disposed) return;
+
+    callBack.onFetch(FetchSourceType.NETWORK);
+
+    final Call httpCall;
+    try {
+      if (request.useHttpGetMethodForQueries && request.operation instanceof Query) {
+        httpCall = httpGetCall(request.operation, request.cacheHeaders, request.requestHeaders,
+            request.sendQueryDocument, request.autoPersistQueries);
+      } else {
+        httpCall = httpPostCall(request.operation, request.cacheHeaders, request.requestHeaders,
+            request.sendQueryDocument, request.autoPersistQueries);
+      }
+    } catch (IOException e) {
+      logger.e(e, "Failed to prepare http call for operation %s", request.operation.name().name());
+      callBack.onFailure(new ApolloNetworkException("Failed to prepare http call", e));
+      return;
+    }
+
+    final Call previousCall = httpCallRef.getAndSet(httpCall);
+    if (previousCall != null) {
+      previousCall.cancel();
+    }
+
+    if (httpCall.isCanceled() || disposed) {
+      httpCallRef.compareAndSet(httpCall, null);
+      return;
+    }
+
+    httpCall.enqueue(new Callback() {
+      @Override
+      public void onFailure(@NotNull Call call, @NotNull IOException e) {
+        if (httpCallRef.compareAndSet(call, null)) {
+          if (disposed) return;
+          logger.e(e, "Failed to execute http call for operation %s", request.operation.name().name());
+          callBack.onFailure(new ApolloNetworkException("Failed to execute http call", e));
+        }
+      }
+
+      @Override
+      public void onResponse(@NotNull Call call, @NotNull Response response) {
+        if (httpCallRef.compareAndSet(call, null)) {
+          if (disposed) return;
+          callBack.onResponse(new ApolloInterceptor.InterceptorResponse(response));
+          callBack.onCompleted();
+        }
+      }
+    });
   }
 
   Call httpGetCall(Operation operation, CacheHeaders cacheHeaders, RequestHeaders requestHeaders,
       boolean writeQueryDocument, boolean autoPersistQueries) throws IOException {
     Request.Builder requestBuilder = new Request.Builder()
-        .get()
-        .url(httpGetUrl(serverUrl, operation, scalarTypeAdapters, writeQueryDocument, autoPersistQueries));
+        .url(httpGetUrl(serverUrl, operation, scalarTypeAdapters, writeQueryDocument, autoPersistQueries))
+        .get();
     decorateRequest(requestBuilder, operation, cacheHeaders, requestHeaders);
     return httpCallFactory.newCall(requestBuilder.build());
   }
@@ -144,6 +166,7 @@ import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
 
     Request.Builder requestBuilder = new Request.Builder()
         .url(serverUrl)
+        .header(HEADER_CONTENT_TYPE, CONTENT_TYPE)
         .post(requestBody);
     decorateRequest(requestBuilder, operation, cacheHeaders, requestHeaders);
     return httpCallFactory.newCall(requestBuilder.build());
@@ -153,7 +176,6 @@ import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
       RequestHeaders requestHeaders) throws IOException {
     requestBuilder
         .header(HEADER_ACCEPT_TYPE, ACCEPT_TYPE)
-        .header(HEADER_CONTENT_TYPE, CONTENT_TYPE)
         .header(HEADER_APOLLO_OPERATION_ID, operation.operationId())
         .header(HEADER_APOLLO_OPERATION_NAME, operation.name().name())
         .tag(operation.operationId());
@@ -204,7 +226,7 @@ import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
           .endObject();
     }
     if (!autoPersistQueries || writeQueryDocument) {
-      jsonWriter.name("query").value(operation.queryDocument().replaceAll("\\n", ""));
+      jsonWriter.name("query").value(operation.queryDocument());
     }
     jsonWriter.endObject();
     jsonWriter.close();
@@ -216,7 +238,7 @@ import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
       boolean autoPersistQueries) throws IOException {
     HttpUrl.Builder urlBuilder = serverUrl.newBuilder();
     if (!autoPersistQueries || writeQueryDocument) {
-      urlBuilder.addQueryParameter("query", operation.queryDocument().replaceAll("\\n", ""));
+      urlBuilder.addQueryParameter("query", operation.queryDocument());
     }
     if (operation.variables() != Operation.EMPTY_VARIABLES) {
       addVariablesUrlQueryParameter(urlBuilder, operation, scalarTypeAdapters);
@@ -343,5 +365,4 @@ import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
       this.file = file;
     }
   }
-
 }

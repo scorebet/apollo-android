@@ -69,8 +69,13 @@ class SchemaTypeSpecBuilder(
         .addMethod(marshallerAccessorMethodSpec)
         .addTypes(nestedTypeSpecs.map { it.second })
         .apply {
-          if (inlineFragments.isNotEmpty()) addType(
-              inlineFragmentsResponseMapperSpec(nameOverrideMap, surrogateInlineFragmentType!!))
+          if (inlineFragments.isNotEmpty()) {
+            addType(inlineFragmentsResponseMapperSpec(nameOverrideMap, surrogateInlineFragmentType!!))
+            if (context.generateVisitorForPolymorphicDatatypes) {
+              addType(inlineFragmentsVisitorInterfaceSpec(nameOverrideMap, surrogateInlineFragmentType))
+              addMethod(inlineFragmentsVisitorMethodSpec(nameOverrideMap, surrogateInlineFragmentType))
+            }
+          }
         }
         .build()
         .let { protocol ->
@@ -173,7 +178,7 @@ class SchemaTypeSpecBuilder(
       return fragmentSpreads.map { fragmentName ->
         val optional = isOptional(fragmentName)
         FieldSpec.builder(
-            JavaTypeResolver(context = context, packageName = context.fragmentsPackage)
+            JavaTypeResolver(context = context, packageName = context.packageNameProvider.fragmentsPackageName)
                 .resolve(typeName = fragmentName.capitalize(), isOptional = optional), fragmentName.decapitalize())
             .addModifiers(Modifier.FINAL)
             .build()
@@ -189,7 +194,7 @@ class SchemaTypeSpecBuilder(
           fragmentName.decapitalize()
         }
         MethodSpec.methodBuilder(methodName)
-            .returns(JavaTypeResolver(context = context, packageName = context.fragmentsPackage)
+            .returns(JavaTypeResolver(context = context, packageName = context.packageNameProvider.fragmentsPackageName)
                 .resolve(typeName = fragmentName.capitalize(), isOptional = optional))
             .addModifiers(Modifier.PUBLIC)
             .addStatement("return this.\$L", fragmentName.decapitalize())
@@ -313,7 +318,8 @@ class SchemaTypeSpecBuilder(
           responseFieldType = ResponseField.Type.FRAGMENT,
           typeConditions = context.ir.fragments
               .filter { it.fragmentName in fragmentSpreads }
-              .flatMap { it.possibleTypes },
+              .flatMap { it.possibleTypes }
+              .distinct(),
           context = context
       ))
     } else {
@@ -401,6 +407,31 @@ class SchemaTypeSpecBuilder(
         .build()
   }
 
+  private fun inlineFragmentsVisitorInterfaceSpec(
+    nameOverrideMap: Map<String, String>,
+    surrogateInlineFragmentType: TypeSpec
+  ): TypeSpec {
+    val typeClassName = ClassName.get("", uniqueTypeName)
+    val implementations = inlineFragments.map { inlineFragment ->
+      val fieldSpec = inlineFragment.fieldSpec(context).overrideType(nameOverrideMap)
+      val inlineFragmentResponseFieldType = fieldSpec.type.rawType() as ClassName
+       ClassName.get("", inlineFragmentResponseFieldType.simpleName())
+    } + ClassName.get("", surrogateInlineFragmentType.name)
+    return VisitorInterfaceSpec(typeClassName, implementations).createVisitorInterface()
+  }
+
+  private fun inlineFragmentsVisitorMethodSpec(
+    nameOverrideMap: Map<String, String>,
+    surrogateInlineFragmentType: TypeSpec
+  ): MethodSpec {
+    val implementations = inlineFragments.map { inlineFragment ->
+      val fieldSpec = inlineFragment.fieldSpec(context).overrideType(nameOverrideMap)
+      val inlineFragmentResponseFieldType = fieldSpec.type.rawType() as ClassName
+      ClassName.get("", inlineFragmentResponseFieldType.simpleName())
+    } + ClassName.get("", surrogateInlineFragmentType.name)
+    return VisitorMethodSpec(implementations).createVisitorMethod()
+  }
+
   private fun inlineFragmentsResponseMapperSpec(nameOverrideMap: Map<String, String>,
       surrogateInlineFragmentType: TypeSpec): TypeSpec {
     val inlineFragments = inlineFragments.map { inlineFragment ->
@@ -414,7 +445,7 @@ class SchemaTypeSpecBuilder(
           fieldSpec = fieldSpec,
           normalizedFieldSpec = normalizedFieldSpec,
           responseFieldType = ResponseField.Type.INLINE_FRAGMENT,
-          typeConditions = if (inlineFragment.possibleTypes != null && !inlineFragment.possibleTypes.isEmpty())
+          typeConditions = if (inlineFragment.possibleTypes != null && inlineFragment.possibleTypes.isNotEmpty())
             inlineFragment.possibleTypes
           else
             listOf(inlineFragment.typeCondition),

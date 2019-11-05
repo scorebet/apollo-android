@@ -14,6 +14,7 @@ import com.apollographql.apollo.api.ResponseField
 import com.apollographql.apollo.api.ResponseFieldMapper
 import com.apollographql.apollo.api.ResponseFieldMarshaller
 import com.apollographql.apollo.api.ResponseReader
+import com.apollographql.apollo.internal.QueryDocumentMinifier
 import com.example.arguments_complex.type.Episode
 import kotlin.Any
 import kotlin.Array
@@ -24,8 +25,8 @@ import kotlin.Suppress
 import kotlin.collections.Map
 import kotlin.jvm.Transient
 
-@Suppress("NAME_SHADOWING", "LocalVariableName", "RemoveExplicitTypeArguments",
-    "NestedLambdaShadowedImplicitParameter")
+@Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
+    "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
 data class TestQuery(
   val episode: Input<Episode>,
   val stars: Int,
@@ -111,11 +112,15 @@ data class TestQuery(
                 "kind" to "Variable",
                 "variableName" to "stars"),
               "favoriteColor" to mapOf<String, Any>(
-                "red" to "0.0",
+                "red" to "0",
                 "green" to mapOf<String, Any>(
                   "kind" to "Variable",
                   "variableName" to "greenValue"),
-                "blue" to "0.0"))), true, null)
+                "blue" to "0.0"),
+              "listOfStringNonOptional" to "[]"),
+            "listOfInts" to
+              "[{kind=Variable, variableName=stars}, {kind=Variable, variableName=stars}]"), true,
+              null)
           )
 
       operator fun invoke(reader: ResponseReader): Data {
@@ -132,17 +137,19 @@ data class TestQuery(
 
   companion object {
     const val OPERATION_ID: String =
-        "b884beff93e8ae07fb00cfbb6f95ce377673dc97fd56f4a3ce2608dc8f48a8b6"
+        "ea0219363b8af60b029b30af551861cbae30648978be2060651eacc0e34a79d0"
 
-    val QUERY_DOCUMENT: String = """
-        |query TestQuery(${'$'}episode: Episode, ${'$'}stars: Int!, ${'$'}greenValue: Float!) {
-        |  heroWithReview(episode: ${'$'}episode, review: {stars: ${'$'}stars, favoriteColor: {red: 0, green: ${'$'}greenValue, blue: 0}}) {
-        |    __typename
-        |    name
-        |    height(unit: FOOT)
-        |  }
-        |}
-        """.trimMargin()
+    val QUERY_DOCUMENT: String = QueryDocumentMinifier.minify(
+          """
+          |query TestQuery(${'$'}episode: Episode, ${'$'}stars: Int!, ${'$'}greenValue: Float!) {
+          |  heroWithReview(episode: ${'$'}episode, review: {stars: ${'$'}stars, favoriteColor: {red: 0, green: ${'$'}greenValue, blue: 0}, listOfStringNonOptional: []}, listOfInts: [${'$'}stars, ${'$'}stars]) {
+          |    __typename
+          |    name
+          |    height(unit: FOOT)
+          |  }
+          |}
+          """.trimMargin()
+        )
 
     val OPERATION_NAME: OperationName = OperationName { "TestQuery" }
   }

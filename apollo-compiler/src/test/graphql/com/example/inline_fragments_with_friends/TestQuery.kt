@@ -12,6 +12,7 @@ import com.apollographql.apollo.api.ResponseField
 import com.apollographql.apollo.api.ResponseFieldMapper
 import com.apollographql.apollo.api.ResponseFieldMarshaller
 import com.apollographql.apollo.api.ResponseReader
+import com.apollographql.apollo.internal.QueryDocumentMinifier
 import com.example.inline_fragments_with_friends.type.CustomType
 import com.example.inline_fragments_with_friends.type.Episode
 import kotlin.Array
@@ -20,8 +21,8 @@ import kotlin.String
 import kotlin.Suppress
 import kotlin.collections.List
 
-@Suppress("NAME_SHADOWING", "LocalVariableName", "RemoveExplicitTypeArguments",
-    "NestedLambdaShadowedImplicitParameter")
+@Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
+    "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
 class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
   override fun operationId(): String = OPERATION_ID
   override fun queryDocument(): String = QUERY_DOCUMENT
@@ -61,7 +62,7 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
       operator fun invoke(reader: ResponseReader): Friend {
         val __typename = reader.readString(RESPONSE_FIELDS[0])
         val appearsIn = reader.readList<Episode>(RESPONSE_FIELDS[1]) {
-          Episode.safeValueOf(it.readString())
+          it.readString()?.let{ Episode.safeValueOf(it) }
         }
         return Friend(
           __typename = __typename,
@@ -279,30 +280,32 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
 
   companion object {
     const val OPERATION_ID: String =
-        "14adf3d0e99c01ba1b6ddef42021f6167d761619e1d15a617d573ea5e82fc0a5"
+        "6a20c9553e5f209b6cc63f98b9d154b5d5917cdea11a903e5dc7f8f420f949b6"
 
-    val QUERY_DOCUMENT: String = """
-        |query TestQuery {
-        |  hero {
-        |    __typename
-        |    name
-        |    ... on Human {
-        |      height
-        |      friends {
-        |        __typename
-        |        appearsIn
-        |      }
-        |    }
-        |    ... on Droid {
-        |      primaryFunction
-        |      friends {
-        |        __typename
-        |        id
-        |      }
-        |    }
-        |  }
-        |}
-        """.trimMargin()
+    val QUERY_DOCUMENT: String = QueryDocumentMinifier.minify(
+          """
+          |query TestQuery {
+          |  hero {
+          |    __typename
+          |    name
+          |    ... on Human {
+          |      height
+          |      friends {
+          |        __typename
+          |        appearsIn
+          |      }
+          |    }
+          |    ... on Droid {
+          |      primaryFunction
+          |      friends {
+          |        __typename
+          |        id
+          |      }
+          |    }
+          |  }
+          |}
+          """.trimMargin()
+        )
 
     val OPERATION_NAME: OperationName = OperationName { "TestQuery" }
   }

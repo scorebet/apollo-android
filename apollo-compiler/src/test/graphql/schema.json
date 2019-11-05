@@ -1,5 +1,7 @@
 {
+  "errors": [],
   "data": {
+    "bla-bla": "-bla",
     "__schema": {
       "queryType": {
         "name": "Query"
@@ -25,6 +27,25 @@
                     "kind": "ENUM",
                     "name": "Episode",
                     "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "listOfListOfStringArgs",
+                  "description": "for test purpose only",
+                  "args": [],
+                  "type": {
+                    "kind": "LIST",
+                    "name": null,
+                    "ofType": {
+                      "kind": "LIST",
+                      "name": null,
+                      "ofType": {
+                        "kind": "SCALAR",
+                        "name": "String",
+                        "ofType": null
+                      }
+                    }
                   },
                   "defaultValue": null
                 }
@@ -65,13 +86,26 @@
                 },
                 {
                   "name": "review",
-                   "description": "",
+                  "description": "",
                   "type": {
                     "kind": "INPUT_OBJECT",
                     "name": "ReviewInput",
                     "ofType": null
                   },
                   "defaultValue": null
+                },
+                {
+                  "name": "listOfInts",
+                  "description": "for test purpose only",
+                  "type": {
+                    "kind": "LIST",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "Int",
+                      "ofType": null
+                    }
+                  }
                 }
               ],
               "type": {
@@ -1876,6 +1910,20 @@
               "defaultValue": "JEDI"
             },
             {
+              "name": "nonNullableEnumWithDefaultValue",
+              "description": "for test purpose only",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "Episode",
+                  "ofType": null
+                }
+              },
+              "defaultValue": "JEDI"
+            },
+            {
               "name": "nullableEnum",
               "description": "for test purpose only",
               "type": {
@@ -1973,6 +2021,21 @@
                   }
                 }
               }
+            },
+             {
+              "name": "listOfInputTypes",
+              "description": "for test purpose only",
+              "args": [],
+              "type": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "INPUT_OBJECT",
+                  "name": "colorInput",
+                  "ofType": null
+                }
+              },
+              "defaultValue": "[]"
             },
             {
               "name": "booleanWithDefaultValue",
@@ -2156,6 +2219,37 @@
                 "ofType": null
               },
               "defaultValue": "new"
+            },
+            {
+              "name": "reviewRefInput",
+              "description": "Circle ref to review input",
+              "type": {
+                "kind": "INPUT_OBJECT",
+                "name": "ReviewRefInput",
+                "ofType": null
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "ReviewRefInput",
+          "description": "Circle ref to review input",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "reviewInput",
+              "description": null,
+              "type": {
+                "kind": "INPUT_OBJECT",
+                "name": "ReviewInput",
+                "ofType": null
+              },
+              "defaultValue": null
             }
           ],
           "interfaces": null,
@@ -3045,6 +3139,31 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            }
+          ]
+        },
+        {
+          "name": "operationDirective",
+          "description": "Dummy directive that can be placed on operations.",
+          "locations": [
+            "QUERY",
+            "MUTATION",
+            "SUBSCRIPTION"
+          ],
+          "args": [
+            {
+              "name": "dummy",
+              "description": "blah",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
                   "ofType": null
                 }
               },

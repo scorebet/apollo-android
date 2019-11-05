@@ -1,11 +1,14 @@
 {
   "scripts": {
-    "start": "rm -rf .cache && gatsby develop",
+    "prestart": "gatsby clean",
+    "start": "gatsby develop",
     "build": "gatsby build",
     "serve": "gatsby serve"
   },
   "dependencies": {
-    "gatsby": "2.13.7",
-    "gatsby-theme-apollo-docs": "1.0.17"
+    "gatsby": "2.17.4",
+    "gatsby-theme-apollo-docs": "2.3.14",
+    "react": "16.10.2",
+    "react-dom": "16.10.2"
   }
 }

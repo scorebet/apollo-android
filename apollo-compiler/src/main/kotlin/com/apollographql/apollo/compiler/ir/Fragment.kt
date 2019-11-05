@@ -1,6 +1,7 @@
 package com.apollographql.apollo.compiler.ir
 
 import com.apollographql.apollo.compiler.*
+import com.apollographql.apollo.compiler.VisitorSpec.VISITOR_CLASSNAME
 import com.squareup.javapoet.ClassName
 import com.squareup.javapoet.CodeBlock
 import com.squareup.javapoet.FieldSpec
@@ -14,10 +15,13 @@ data class Fragment(
     val typeCondition: String,
     val possibleTypes: List<String>,
     val fields: List<Field>,
-    val fragmentSpreads: List<String>,
+    val fragmentRefs: List<FragmentRef>,
     val inlineFragments: List<InlineFragment>,
-    val fragmentsReferenced: List<String>
+    val filePath: String,
+    val sourceLocation: SourceLocation
 ) : CodeGenerator {
+
+  val fragmentSpreads: List<String> = fragmentRefs.map { it.name }
 
   /** Returns the Java interface that represents this Fragment object. */
   override fun toTypeSpec(context: CodeGenerationContext, abstract: Boolean): TypeSpec {
@@ -37,6 +41,7 @@ data class Fragment(
         .addTypeConditionField()
         .build()
         .flatten(excludeTypeNames = listOf(
+            VISITOR_CLASSNAME,
             Util.RESPONSE_FIELD_MAPPER_TYPE_NAME,
             (SchemaTypeSpecBuilder.FRAGMENTS_FIELD.type as ClassName).simpleName(),
             ClassNames.BUILDER.simpleName()
@@ -66,10 +71,10 @@ data class Fragment(
           .build())
 
   private fun possibleTypesInitCode(): CodeBlock {
-    val builder = CodeBlock.builder().add("\$T.unmodifiableList(\$T.asList(", Collections::class.java,
+    val initialBuilder = CodeBlock.builder().add("\$T.unmodifiableList(\$T.asList(", Collections::class.java,
         Arrays::class.java)
     return possibleTypes.foldIndexed(
-        builder,
+        initialBuilder,
         { i, builder, type ->
           if (i > 0) {
             builder.add(",")
@@ -80,7 +85,7 @@ data class Fragment(
   }
 
   companion object {
-    val FRAGMENT_DEFINITION_FIELD_NAME: String = "FRAGMENT_DEFINITION"
-    val POSSIBLE_TYPES_VAR: String = "POSSIBLE_TYPES"
+    const val FRAGMENT_DEFINITION_FIELD_NAME: String = "FRAGMENT_DEFINITION"
+    const val POSSIBLE_TYPES_VAR: String = "POSSIBLE_TYPES"
   }
 }

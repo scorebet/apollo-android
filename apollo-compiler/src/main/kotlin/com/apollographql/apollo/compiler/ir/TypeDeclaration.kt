@@ -10,22 +10,18 @@ import javax.lang.model.element.Modifier
 data class TypeDeclaration(
     val kind: String,
     val name: String,
-    val description: String?,
-    val values: List<TypeDeclarationValue>?,
-    val fields: List<TypeDeclarationField>?
+    val description: String = "",
+    val values: List<TypeDeclarationValue> = emptyList(),
+    val fields: List<TypeDeclarationField> = emptyList()
 ) : CodeGenerator {
-  override fun toTypeSpec(context: CodeGenerationContext, abstract: Boolean): TypeSpec {
-    if (kind == KIND_ENUM) {
-      return enumTypeToTypeSpec()
-    } else if (kind == KIND_INPUT_OBJECT_TYPE) {
-      return inputObjectToTypeSpec(context)
-    } else {
-      throw UnsupportedOperationException("unsupported $kind type declaration")
-    }
+  override fun toTypeSpec(context: CodeGenerationContext, abstract: Boolean): TypeSpec = when (kind) {
+    KIND_ENUM -> enumTypeToTypeSpec()
+    KIND_INPUT_OBJECT_TYPE -> inputObjectToTypeSpec(context)
+    else -> throw UnsupportedOperationException("unsupported $kind type declaration")
   }
 
   private fun enumTypeToTypeSpec(): TypeSpec {
-    val enumConstants = values?.map { value ->
+    val enumConstants = values.map { value ->
       value.name to TypeSpec.anonymousClassBuilder("\$S", value.name)
           .apply {
             if (!value.description.isNullOrEmpty()) {
@@ -74,13 +70,13 @@ data class TypeDeclaration(
             .addStatement("return rawValue")
             .build())
         .apply {
-          enumConstants?.forEach { (name, typeSpec) ->
+          enumConstants.forEach { (name, typeSpec) ->
             addEnumConstant(name.escapeJavaReservedWord().toUpperCase(), typeSpec)
           }
         }
         .addEnumConstant(ENUM_UNKNOWN_CONSTANT, unknownConstantTypeSpec)
         .apply {
-          if (!description.isNullOrEmpty()) {
+          if (description.isNotEmpty()) {
             addJavadoc("\$L\n", description)
           }
         }
@@ -89,7 +85,7 @@ data class TypeDeclaration(
   }
 
   private fun inputObjectToTypeSpec(context: CodeGenerationContext) =
-      InputTypeSpecBuilder(name, fields ?: emptyList(), context).build()
+      InputTypeSpecBuilder(name, fields, context).build()
 
   companion object {
     val KIND_INPUT_OBJECT_TYPE: String = "InputObjectType"

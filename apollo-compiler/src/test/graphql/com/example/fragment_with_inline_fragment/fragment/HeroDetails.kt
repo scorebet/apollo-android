@@ -15,8 +15,8 @@ import kotlin.String
 import kotlin.Suppress
 import kotlin.collections.List
 
-@Suppress("NAME_SHADOWING", "LocalVariableName", "RemoveExplicitTypeArguments",
-    "NestedLambdaShadowedImplicitParameter")
+@Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
+    "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
 data class HeroDetails(
   val __typename: String,
   /**
@@ -26,7 +26,7 @@ data class HeroDetails(
   /**
    * The friends of the character exposed as a connection with edges
    */
-  val friendsConnection: FriendsConnection1,
+  val friendsConnection: FriendsConnection,
   val inlineFragment: HeroDetailCharacter?
 ) : GraphqlFragment {
   override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
@@ -47,6 +47,9 @@ data class HeroDetails(
     val FRAGMENT_DEFINITION: String = """
         |fragment HeroDetails on Character {
         |  __typename
+        |  ... on Droid {
+        |    ...DroidDetails
+        |  }
         |  name
         |  friendsConnection {
         |    __typename
@@ -59,10 +62,6 @@ data class HeroDetails(
         |      }
         |    }
         |  }
-        |  ... on Droid {
-        |    name
-        |    primaryFunction
-        |  }
         |}
         """.trimMargin()
 
@@ -71,8 +70,8 @@ data class HeroDetails(
     operator fun invoke(reader: ResponseReader): HeroDetails {
       val __typename = reader.readString(RESPONSE_FIELDS[0])
       val name = reader.readString(RESPONSE_FIELDS[1])
-      val friendsConnection = reader.readObject<FriendsConnection1>(RESPONSE_FIELDS[2]) { reader ->
-        FriendsConnection1(reader)
+      val friendsConnection = reader.readObject<FriendsConnection>(RESPONSE_FIELDS[2]) { reader ->
+        FriendsConnection(reader)
       }
 
       val inlineFragment = reader.readConditional(RESPONSE_FIELDS[3]) { conditionalType, reader ->
@@ -89,10 +88,6 @@ data class HeroDetails(
         inlineFragment = inlineFragment
       )
     }
-  }
-
-  interface HeroDetailCharacter {
-    fun marshaller(): ResponseFieldMarshaller
   }
 
   data class Node(
@@ -202,54 +197,8 @@ data class HeroDetails(
     }
   }
 
-  data class AsDroid(
-    val __typename: String,
-    /**
-     * What others call this droid
-     */
-    val name: String,
-    /**
-     * The friends of the droid exposed as a connection with edges
-     */
-    val friendsConnection: FriendsConnection,
-    /**
-     * This droid's primary function
-     */
-    val primaryFunction: String?
-  ) : HeroDetailCharacter {
-    override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeString(RESPONSE_FIELDS[0], __typename)
-      it.writeString(RESPONSE_FIELDS[1], name)
-      it.writeObject(RESPONSE_FIELDS[2], friendsConnection.marshaller())
-      it.writeString(RESPONSE_FIELDS[3], primaryFunction)
-    }
-
-    companion object {
-      private val RESPONSE_FIELDS: Array<ResponseField> = arrayOf(
-          ResponseField.forString("__typename", "__typename", null, false, null),
-          ResponseField.forString("name", "name", null, false, null),
-          ResponseField.forObject("friendsConnection", "friendsConnection", null, false, null),
-          ResponseField.forString("primaryFunction", "primaryFunction", null, true, null)
-          )
-
-      val POSSIBLE_TYPES: Array<String> = arrayOf("Droid")
-
-      operator fun invoke(reader: ResponseReader): AsDroid {
-        val __typename = reader.readString(RESPONSE_FIELDS[0])
-        val name = reader.readString(RESPONSE_FIELDS[1])
-        val friendsConnection = reader.readObject<FriendsConnection>(RESPONSE_FIELDS[2]) { reader ->
-          FriendsConnection(reader)
-        }
-
-        val primaryFunction = reader.readString(RESPONSE_FIELDS[3])
-        return AsDroid(
-          __typename = __typename,
-          name = name,
-          friendsConnection = friendsConnection,
-          primaryFunction = primaryFunction
-        )
-      }
-    }
+  interface HeroDetailCharacter {
+    fun marshaller(): ResponseFieldMarshaller
   }
 
   data class Node1(
@@ -355,6 +304,68 @@ data class HeroDetails(
           totalCount = totalCount,
           edges = edges
         )
+      }
+    }
+  }
+
+  data class AsDroid(
+    val __typename: String,
+    /**
+     * What others call this droid
+     */
+    val name: String,
+    /**
+     * The friends of the droid exposed as a connection with edges
+     */
+    val friendsConnection: FriendsConnection1,
+    val fragments: Fragments
+  ) : HeroDetailCharacter {
+    override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
+      it.writeString(RESPONSE_FIELDS[0], __typename)
+      it.writeString(RESPONSE_FIELDS[1], name)
+      it.writeObject(RESPONSE_FIELDS[2], friendsConnection.marshaller())
+      fragments.marshaller().marshal(it)
+    }
+
+    companion object {
+      private val RESPONSE_FIELDS: Array<ResponseField> = arrayOf(
+          ResponseField.forString("__typename", "__typename", null, false, null),
+          ResponseField.forString("name", "name", null, false, null),
+          ResponseField.forObject("friendsConnection", "friendsConnection", null, false, null),
+          ResponseField.forString("__typename", "__typename", null, false, null)
+          )
+
+      val POSSIBLE_TYPES: Array<String> = arrayOf("Droid")
+
+      operator fun invoke(reader: ResponseReader): AsDroid {
+        val __typename = reader.readString(RESPONSE_FIELDS[0])
+        val name = reader.readString(RESPONSE_FIELDS[1])
+        val friendsConnection = reader.readObject<FriendsConnection1>(RESPONSE_FIELDS[2]) {
+            reader ->
+          FriendsConnection1(reader)
+        }
+
+        val fragments = reader.readConditional(RESPONSE_FIELDS[3]) { conditionalType, reader ->
+          val droidDetails = DroidDetails(reader)
+          Fragments(
+            droidDetails = droidDetails
+          )
+        }
+
+        return AsDroid(
+          __typename = __typename,
+          name = name,
+          friendsConnection = friendsConnection,
+          fragments = fragments
+        )
+      }
+    }
+
+    data class Fragments(
+      val droidDetails: DroidDetails
+    ) {
+      fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
+        droidDetails.marshaller().marshal(it)
       }
     }
   }

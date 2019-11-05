@@ -17,8 +17,8 @@ internal object KotlinCodeGen {
 
   val suppressWarningsAnnotation = AnnotationSpec
       .builder(Suppress::class)
-      .addMember("%S, %S, %S, %S", "NAME_SHADOWING", "LocalVariableName", "RemoveExplicitTypeArguments",
-          "NestedLambdaShadowedImplicitParameter")
+      .addMember("%S, %S, %S, %S, %S", "NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
+          "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
       .build()
 
   fun deprecatedAnnotation(message: String) = AnnotationSpec
@@ -102,14 +102,14 @@ internal object KotlinCodeGen {
 
       when {
         type is FieldType.Scalar && type is FieldType.Scalar.Custom -> {
-          builder.add("(%S, %S, %L, %L, %T.%L, %L)", responseName, schemaName, arguments.toCode(), isOptional,
+          builder.add("(%S, %S, %L, %L, %T.%L, %L)", responseName, schemaName, arguments.takeIf { it.isNotEmpty() }.toCode(), isOptional,
               type.customEnumType.asTypeName(), type.customEnumConst, conditionsListCode(conditions))
         }
         type is FieldType.InlineFragment -> {
           builder.add("(%S, %S, %L)", responseName, schemaName, conditionsListCode(conditions))
         }
         else -> {
-          builder.add("(%S, %S, %L, %L, %L)", responseName, schemaName, arguments.toCode(), isOptional,
+          builder.add("(%S, %S, %L, %L, %L)", responseName, schemaName, arguments.takeIf { it.isNotEmpty() }.toCode(), isOptional,
               conditionsListCode(conditions))
         }
       }
@@ -133,7 +133,8 @@ internal object KotlinCodeGen {
     val readFieldsCode = mapIndexed { index, field ->
       CodeBlock.of("val %L = %L", field.name, field.type.readCode(
           reader = "reader",
-          field = "RESPONSE_FIELDS[$index]"
+          field = "RESPONSE_FIELDS[$index]",
+          optional = field.isOptional
       ))
     }.joinToCode(separator = "\n", suffix = "\n")
     val mapFieldsCode = map { field ->
@@ -155,15 +156,18 @@ internal object KotlinCodeGen {
         .build()
   }
 
-  private fun FieldType.readCode(reader: String, field: String): CodeBlock {
+  private fun FieldType.readCode(reader: String, field: String, optional: Boolean): CodeBlock {
     return when (this) {
       is FieldType.Scalar -> when (this) {
         is FieldType.Scalar.String -> CodeBlock.of("%L.readString(%L)", reader, field)
         is FieldType.Scalar.Int -> CodeBlock.of("%L.readInt(%L)", reader, field)
         is FieldType.Scalar.Boolean -> CodeBlock.of("%L.readBoolean(%L)", reader, field)
         is FieldType.Scalar.Float -> CodeBlock.of("%L.readDouble(%L)", reader, field)
-        is FieldType.Scalar.Enum -> CodeBlock.of("%T.safeValueOf(%L.readString(%L))", typeRef.asTypeName(), reader,
-            field)
+        is FieldType.Scalar.Enum -> if (optional) {
+          CodeBlock.of("%L.readString(%L)?.let{ %T.safeValueOf(it) }", reader, field, typeRef.asTypeName())
+        } else {
+          CodeBlock.of("%T.safeValueOf(%L.readString(%L))", typeRef.asTypeName(), reader, field)
+        }
         is FieldType.Scalar.Custom -> if (field.isNotEmpty()) {
           CodeBlock.of("%L.readCustomType<%T>(%L as %T)", reader, ClassName.bestGuess(mappedType),
               field, ResponseField.CustomTypeField::class)
@@ -192,7 +196,7 @@ internal object KotlinCodeGen {
               }
             }
             .indent()
-            .add(rawType.readCode(reader = "it", field = ""))
+            .add(rawType.readCode(reader = "it", field = "", optional = isOptional))
             .add("\n")
             .unindent()
             .add("}")
@@ -207,7 +211,7 @@ internal object KotlinCodeGen {
                     CodeBlock.of("val %L = if (%T.POSSIBLE_TYPES.contains(conditionalType)) %T(reader) else null",
                         field.name, field.type.asTypeName(), field.type.asTypeName())
                   } else {
-                     CodeBlock.of("val %L = %T(reader)", field.name, field.type.asTypeName())
+                    CodeBlock.of("val %L = %T(reader)", field.name, field.type.asTypeName())
                   }
                 }.joinToCode(separator = "\n", suffix = "\n")
             )
@@ -358,22 +362,25 @@ internal object KotlinCodeGen {
   fun Any.toDefaultValueCodeBlock(typeName: TypeName, fieldType: FieldType): CodeBlock = when {
     this is Number -> CodeBlock.of("%L%L", castTo(typeName), if (typeName == LONG) "L" else "")
     fieldType is FieldType.Scalar.Enum -> CodeBlock.of("%T.safeValueOf(%S)", typeName, this)
-    fieldType is FieldType.Array -> (this as List<Any>).toDefaultValueCodeBlock(typeName, fieldType)
+    fieldType is FieldType.Array -> {
+      @Suppress("UNCHECKED_CAST")
+      (this as List<Any>).toDefaultValueCodeBlock(typeName, fieldType)
+    }
     this !is String -> CodeBlock.of("%L", this)
     else -> CodeBlock.of("%S", this)
   }
 
   private fun List<Any>.toDefaultValueCodeBlock(typeName: TypeName, fieldType: FieldType.Array): CodeBlock {
-    val codeBuilder = CodeBlock.builder().add("listOf(")
-    return filterNotNull()
-        .map {
-          it.toDefaultValueCodeBlock((typeName as ParameterizedTypeName).typeArguments.first(), fieldType.rawType)
-        }
-        .foldIndexed(codeBuilder) { index, builder, code ->
-          builder.add(if (index > 0) ", " else "").add(code)
-        }
-        .add(")")
-        .build()
+    return if (isEmpty()) {
+      CodeBlock.of("emptyList()")
+    } else {
+      filterNotNull()
+          .map { value ->
+            val rawTypeName = (typeName as ParameterizedTypeName).typeArguments.first().copy(nullable = false)
+            value.toDefaultValueCodeBlock(rawTypeName, fieldType.rawType)
+          }
+          .joinToCode(prefix = "listOf(", separator = ", ", suffix = ")")
+    }
   }
 
   private fun Number.castTo(type: TypeName): Number = when (type) {
@@ -385,16 +392,14 @@ internal object KotlinCodeGen {
 
   fun TypeRef.asTypeName() = ClassName(packageName = packageName, simpleName = name.capitalize())
 
-  private fun Map<String, Any>.toCode(): CodeBlock? {
-    return takeIf { it.isNotEmpty() }?.let {
-      it.map { it.toCode() }
-          .foldIndexed(CodeBlock.builder().add("mapOf<%T, Any>(\n",
-              String::class.asTypeName()).indent()) { index, builder, code ->
-            if (index > 0) {
-              builder.add(",\n")
-            }
-            builder.add(code)
-          }
+  private fun Map<String, Any?>?.toCode(): CodeBlock? {
+    return when {
+      this == null -> null
+      this.isEmpty() -> CodeBlock.of("emptyMap<%T, Any>()", String::class.asTypeName())
+      else -> CodeBlock.builder()
+          .add("mapOf<%T, Any>(\n", String::class.asTypeName())
+          .indent()
+          .add(map { it.toCode() }.joinToCode(separator = ",\n"))
           .unindent()
           .add(")")
           .build()
@@ -402,24 +407,9 @@ internal object KotlinCodeGen {
   }
 
   @Suppress("UNCHECKED_CAST")
-  private fun Map.Entry<String, Any>.toCode() = when (value) {
+  private fun Map.Entry<String, Any?>.toCode() = when (value) {
     is Map<*, *> -> CodeBlock.of("%S to %L", key, (value as Map<String, Any>).toCode())
+    null -> CodeBlock.of("%S to null", key)
     else -> CodeBlock.of("%S to %S", key, value)
-  }
-
-  fun Any.normalizeJsonValue(graphQLType: String): Any = when (this) {
-    is Number -> {
-      val scalarType = ScalarType.forName(graphQLType.removeSuffix("!"))
-      when (scalarType) {
-        is ScalarType.INT -> toInt()
-        is ScalarType.FLOAT -> toDouble()
-        else -> this
-      }
-    }
-    is Boolean, is Map<*, *> -> this
-    is List<*> -> this.mapNotNull {
-      it?.normalizeJsonValue(graphQLType.removeSuffix("!").removePrefix("[").removeSuffix("]"))
-    }
-    else -> toString()
   }
 }

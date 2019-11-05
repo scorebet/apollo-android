@@ -2,7 +2,9 @@ package com.apollographql.apollo.compiler
 
 import com.apollographql.apollo.api.OperationName
 import com.apollographql.apollo.api.ResponseFieldMapper
+import com.apollographql.apollo.compiler.VisitorSpec.VISITOR_CLASSNAME
 import com.apollographql.apollo.compiler.ir.*
+import com.apollographql.apollo.internal.QueryDocumentMinifier
 import com.squareup.javapoet.*
 import javax.lang.model.element.Modifier
 
@@ -30,6 +32,7 @@ class OperationTypeSpecBuilder(
         .addOperationName()
         .build()
         .flatten(excludeTypeNames = listOf(
+            VISITOR_CLASSNAME,
             Util.RESPONSE_FIELD_MAPPER_TYPE_NAME,
             (SchemaTypeSpecBuilder.FRAGMENTS_FIELD.type as ClassName).simpleName(),
             ClassNames.BUILDER.simpleName()
@@ -55,7 +58,7 @@ class OperationTypeSpecBuilder(
   private fun TypeSpec.Builder.addOperationId(operation: Operation): TypeSpec.Builder {
     addField(FieldSpec.builder(ClassNames.STRING, OPERATION_ID_FIELD_NAME)
         .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-        .initializer("\$S", operation.sourceWithFragments?.sha256())
+        .initializer("\$S", QueryDocumentMinifier.minify(operation.sourceWithFragments).sha256())
         .build()
     )
 
@@ -72,7 +75,15 @@ class OperationTypeSpecBuilder(
   private fun TypeSpec.Builder.addQueryDocumentDefinition(): TypeSpec.Builder {
     addField(FieldSpec.builder(ClassNames.STRING, QUERY_DOCUMENT_FIELD_NAME)
         .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-        .initializer("\$S", operation.sourceWithFragments)
+        .initializer(
+            CodeBlock.builder()
+                .add("\$T.minify(\n", QueryDocumentMinifier::class.java)
+                .indent()
+                .add("\$S\n", operation.sourceWithFragments)
+                .unindent()
+                .add(")")
+                .build()
+        )
         .build()
     )
 
@@ -146,7 +157,7 @@ class OperationTypeSpecBuilder(
           .map { variable ->
             variable.name.decapitalize() to JavaTypeResolver(
                 context.copy(nullableValueType = NullableValueType.INPUT_TYPE),
-                context.typesPackage
+                context.packageNameProvider.typesPackageName
             ).resolve(variable.type)
           }
           .map { (name, type) ->
@@ -203,7 +214,7 @@ class OperationTypeSpecBuilder(
         .map {
           it.first to JavaTypeResolver(
               context.copy(nullableValueType = NullableValueType.INPUT_TYPE),
-              context.typesPackage
+              context.packageNameProvider.typesPackageName
           ).resolve(it.second)
         }
         .let {

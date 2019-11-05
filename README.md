@@ -1,5 +1,5 @@
 
-# Apollo GraphQL Client for Android
+# Apollo GraphQL Client for Android and the JVM
 
 [![GitHub license](https://img.shields.io/badge/license-MIT-lightgrey.svg?maxAge=2592000)](https://raw.githubusercontent.com/apollographql/apollo-android/master/LICENSE) [![Get on Slack](https://img.shields.io/badge/slack-join-orange.svg)](http://www.apollostack.com/#slack)
 [![Build status](https://travis-ci.org/apollographql/apollo-android.svg?branch=master)](https://travis-ci.org/apollographql/apollo-android)
@@ -7,7 +7,7 @@
 
 Apollo-Android is a GraphQL compliant client that generates Java models from standard GraphQL queries.  These models give you a typesafe API to work with GraphQL servers.  Apollo will help you keep your GraphQL query statements together, organized, and easy to access from Java. Change a query and recompile your project - Apollo code gen will rebuild your data model.  Code generation also allows Apollo to read and unmarshal responses from the network without the need of any reflection (see example generated code below).  Future versions of Apollo-Android will also work with AutoValue and other value object generators.
 
-Apollo-Android is designed primarily with Android in mind but you can use it in any java/kotlin app. The android-only parts are in `apollo-android-support` and are only needed to use SQLite as a cache or the android main thread for callbacks.
+Apollo-Android is designed primarily with Android in mind but you can use it in any Java/Kotlin app. The android-only parts are in `apollo-android-support` and are only needed to use SQLite as a cache or the android main thread for callbacks.
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE (https://github.com/thlorenz/doctoc) -->
@@ -18,14 +18,17 @@ Apollo-Android is designed primarily with Android in mind but you can use it in 
 - [Consuming Code](#consuming-code)
 - [Custom Scalar Types](#custom-scalar-types)
 - [Support For Cached Responses](#support-for-cached-responses)
-- [RxJava Support](#rxjava-support)
+- [RxJava2 Support](#rxjava2-support)
+- [Coroutines Support](#coroutines-support)
+- [Android Espresso Support](#android-espresso-support)
 - [Gradle Configuration of Apollo Android](#gradle-configuration-of-apollo-android)
   - [Optional Support](#optional-support)
   - [Semantic Naming](#semantic-naming)
   - [Java Beans Semantic Naming for Accessors](#java-beans-semantic-naming-for-accessors)
   - [Explicit Schema location](#explicit-schema-location)
-  - [Use system pre-installed apollo-codegen](#use-system-pre-installed-apollo-codegen)
-  - [Kotlin model generation (experimental)](#kotlin-model-generation-experimental)
+  - [Kotlin model generation](#kotlin-model-generation)
+  - [Transformed queries](#transformed-queries)
+  - [Incubating plugin](#incubating-plugin)
 - [License](#license)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update --> 
@@ -68,7 +71,7 @@ buildscript {
     maven { url 'https://oss.sonatype.org/content/repositories/snapshots/' }
   }
   dependencies {
-    classpath 'com.apollographql.apollo:apollo-gradle-plugin:1.0.2-SNAPSHOT'
+    classpath 'com.apollographql.apollo:apollo-gradle-plugin:1.2.2-SNAPSHOT'
   }
 }
 ```
@@ -80,7 +83,7 @@ repositories {
 }
 
 dependencies {
-  implementation 'com.apollographql.apollo:apollo-runtime:1.0.2-SNAPSHOT'
+  implementation 'com.apollographql.apollo:apollo-runtime:1.2.2-SNAPSHOT'
 }
 ```
 
@@ -93,7 +96,7 @@ apply plugin: 'com.apollographql.android'
 The Android Plugin must be applied before the Apollo plugin.
 For Kotlin users, the Apollo plugin must be applied before the Kotlin plugins.
 
-**NOTE: Apollo Gradle plugin requires Gradle 4.3 or higher.**
+**NOTE: Apollo Gradle plugin requires Gradle 5.1.1 or higher.**
 
 ## Generate Code using Apollo
 
@@ -108,7 +111,7 @@ dependencies {
 
 Follow these steps:
 1) Create the directory `graphql` inside the `main`directory and create new directory structure like `com/apollographql/apollo/sample/`so that the **Apollo plugin can generate  java classes with valid package**.
-2) Put your GraphQL queries in a `.graphql` file. For the sample project in this repo you can find the graphql file at `apollo-sample/src/main/graphql/com/apollographql/apollo/sample/GithuntFeedQuery.graphql`. 
+2) Put your GraphQL queries in a `.graphql` file. For the sample project in this repo you can find the graphql file at `samples/apollo-sample/src/main/graphql/com/apollographql/apollo/sample/GithuntFeedQuery.graphql`. 
 
 ```
 query FeedQuery($type: FeedType!, $limit: Int!) {
@@ -144,11 +147,11 @@ fragment FeedCommentFragment on Comment {
 
 Note: There is nothing Android specific about this query, it can be shared with other GraphQL clients as well
 
-3) You will also need to add a schema to the project. In the sample project you can find the schema `apollo-sample/src/main/graphql/com/apollographql/apollo/sample/schema.json`. 
+3) You will also need to add a schema to the project. In the sample project you can find the schema `samples/apollo-sample/src/main/graphql/com/apollographql/apollo/sample/schema.json`. 
 
-You can find instructions to download your schema using the apollo CLI [HERE](https://github.com/apollographql/apollo-tooling#apollo-schemadownload-output)
+You can find instructions to download your schema using the apollo CLI [HERE](https://github.com/apollographql/apollo-tooling#apollo-clientdownload-schema-output)
 
-4) Compile your project to have Apollo generate the appropriate Java classes with nested classes for reading from the network response. In the sample project, a `FeedQuery` Java class is created here `apollo-sample/build/generated/source/apollo/com/apollographql/apollo/sample`.
+4) Compile your project to have Apollo generate the appropriate Java classes with nested classes for reading from the network response. In the sample project, a `FeedQuery` Java class is created here `samples/apollo-sample/build/generated/source/apollo/com/apollographql/apollo/sample`.
 
 Note: This is a file that Apollo generates and therefore should not be mutated.
 
@@ -253,7 +256,7 @@ apollo {
 
 ### Support File Upload
 
-Apollo supports file uploading over [graphql-multipart-request-spec](https://github.com/jaydenseric/graphql-multipart-request-spec).
+From version `1.0.1`, Apollo Android supports file uploading over [graphql-multipart-request-spec](https://github.com/jaydenseric/graphql-multipart-request-spec).
 
 You need to define this mapping in your build.gradle file.
 
@@ -264,6 +267,8 @@ apollo {
   ]
 }
 ```
+
+**Note** You don't need to register custom type adapter for `FileUpload`.
 
 In this example, the GraphQL schema uses custom scalar type named `Upload` for file upload. 
 Change it to match your GraphQL schema.
@@ -354,7 +359,6 @@ There are four available cache policies `HttpCachePolicy`:
 - `NETWORK_ONLY` - Fetch a response from the network only, ignoring any cached responses.
 - `CACHE_FIRST` - Fetch a response from the cache first. If the response doesn't exist or is expired, then fetch a response from the network.
 - `NETWORK_FIRST` - Fetch a response from the network first. If the network fails and the cached response isn't expired, then return cached data instead.
-- `CACHE_AND_NETWORK` - Fetch a response from the cache and the network.
 
 For `CACHE_ONLY`, `CACHE_FIRST` and `NETWORK_FIRST` policies you can define the timeout after what cached response is treated as expired and will be evicted from the http cache, `expireAfter(expireTimeout, timeUnit)`.`
 
@@ -427,15 +431,15 @@ NormalizedCacheFactory memoryFirstThenSqlCacheFactory = new LruNormalizedCacheFa
 For concrete examples of using response caches, please see the following tests in the [`apollo-integration`](apollo-integration) module:
 `CacheTest`, `SqlNormalizedCacheTest`, `LruNormalizedCacheTest`. 
 
-## RxJava Support
+## RxJava2 Support
 
-Apollo GraphQL client comes with RxJava1 & RxJava2 support.
+The Apollo GraphQL client comes with RxJava2 support.
 
-Apollo types can be converted to RxJava1 & RxJava2 `Observable` *types* using wrapper functions `RxApollo.from(...)` & `Rx2Apollo.from(...)` (respectively).
+Apollo types can be converted to RxJava2 `Observable` *types* using wrapper functions `Rx2Apollo.from(...)`.
 
 Conversion is done according to the following table:
 
-| Apollo type | RxJava1 / RxJava2 type|
+| Apollo type |  RxJava2 type|
 | :--- | :--- |
 | `ApolloCall<T>` | `Observable<Response<T>>` |
 | `ApolloSubscriptionCall<T>` | `Observable<Response<T>>` |
@@ -445,13 +449,7 @@ Conversion is done according to the following table:
 
 #### Including in your project
 
-Add one of the following `dependencies`:
-
-[ ![apollo-rx-support](https://img.shields.io/bintray/v/apollographql/android/apollo-rx-support.svg?label=apollo-rx-support) ](https://bintray.com/apollographql/android/apollo-rx-support/_latestVersion)
-```gradle
-// RxJava1 support
-implementation 'com.apollographql.apollo:apollo-rx-support:x.y.z'
-```
+Add the following `dependency`:
 
 [ ![apollo-rx2-support](https://img.shields.io/bintray/v/apollographql/android/apollo-rx2-support.svg?label=apollo-rx2-support) ](https://bintray.com/apollographql/android/apollo-rx2-support/_latestVersion)
 ```gradle
@@ -508,7 +506,56 @@ disposable.clear();
 ```
 
 
-For a concrete example of using Rx wrappers for apollo types, checkout the sample app in the [`apollo-sample`](apollo-sample) module.
+For a concrete example of using Rx wrappers for apollo types, checkout the sample app in the [`apollo-sample`](samples/apollo-sample) module.
+
+## Coroutines Support
+
+The Apollo GraphQL client comes with coroutines support with the following extensions:
+
+```kotlin
+fun <T> ApolloCall<T>.toChannel(capacity: Int = Channel.UNLIMITED): Channel<Response<T>>
+fun <T> ApolloCall<T>.toDeferred(): Deferred<Response<T>>
+fun <T> ApolloSubscriptionCall<T>.toChannel(capacity: Int = Channel.UNLIMITED): Channel<Response<T>>
+fun <T> ApolloQueryWatcher<T>.toChannel(capacity: Int = Channel.UNLIMITED): Channel<Response<T>>
+fun ApolloPrefetch.toJob(): Job
+```
+
+#### Including in your project
+
+Add the following `dependency`:
+
+[ ![apollo-coroutines-support](https://img.shields.io/bintray/v/apollographql/android/apollo-coroutines-support.svg?label=apollo-coroutines-coroutines) ](https://bintray.com/apollographql/android/apollo-coroutines-support/_latestVersion)
+```gradle
+repositories {
+    maven {
+        // The coroutines artifact is not deployed on jcenter yet
+        // See https://github.com/apollographql/apollo-android/issues/1325
+        url = uri("http://dl.bintray.com/apollographql/android")
+    }
+}
+
+implementation 'com.apollographql.apollo:apollo-coroutines-support:x.y.z'
+```
+
+## Android Espresso support
+
+The Apollo GraphQL client comes with a [IdlingResource](https://developer.android.com/training/testing/espresso/idling-resource) to use during your Android UI tests.
+
+```kotlin
+// Register the idlingResource before running your tests.
+// This should be done once per client. Register several IdlingResources with the same name will crash
+val idlingResource = ApolloIdlingResource.create("apolloClientIdlingResource", apolloClient)
+IdlingRegistry.getInstance().register(idlingResource)
+```
+
+#### Including in your project
+
+Add the following `dependency`:
+
+[ ![apollo-espresso-support](https://img.shields.io/bintray/v/apollographql/android/apollo-espresso-support.svg?label=apollo-espresso-support) ](https://bintray.com/apollographql/android/apollo-espresso-support/_latestVersion)
+```gradle
+implementation 'com.apollographql.apollo:apollo-espresso-support:x.y.z'
+```
 
 ##  Gradle Configuration of Apollo Android
 Apollo Android comes with logical defaults that will work for the majority of use cases, below you will find additional configuration that will add Optional Support & Semantic Query Naming.
@@ -610,18 +657,15 @@ apollo {
 }
 ```
 
-### Use system pre-installed `apollo-codegen`
-By default Apollo will enable gradle plugin that installs Node-JS and downloads `apollo-codegen` module into your project's build directory. If you already have Node-JS and `apollo-codegen` module installed on your computer, you can enable Apollo to use it and skip these steps. Apollo will fallback to default behaviour if verification of pre-installed version of `apollo-codegen` fails.          
-
-#### Usage
-To enable usage of pre-installed `apollo-codegen` module, set gradle system property `apollographql.useGlobalApolloCodegen` (for example in `gradle.properties` file):
-```properties
-systemProp.apollographql.useGlobalApolloCodegen=true
+### Visitor generation for polymorphic datatypes
+Apollo Gradle plugin also supports generating visitors for compile-time safe handling of polymorphic datatypes. By default the feature is turned off since it requires source/target compatibility with Java 1.8. To opt into visitor generation:
+```groovy
+apollo {
+  generateVisitorForPolymorphicDatatypes = true
+}
 ```
 
-Note that this requires exactly version `0.19.1` (not older, not newer). You can install this conventionally via `npm install -g apollo-codegen@0.19.1`.
-
-### Kotlin model generation (experimental)
+### Kotlin model generation
 By default Apollo Gradle plugin generates Java models but you can configure it to generate Kotlin models instead:
 ```groovy
 apollo {
@@ -629,7 +673,111 @@ apollo {
 }
 ```
 
-It is still an experimental and not finalized yet. The structure of generated models is subject to change.
+### Transformed queries
+When Apollo-Android executes your queries, the actual queries sent to the server differs slightly from what was given; specifically, type hints are added to variable-type fields. These differences don't affect typical use. If you want access to these transformed queries, Apollo Gradle plugin can save them to a build directory for you. This can be useful if you need to upload a query's exact content to a server that doesn't support automatic persisted queries.
+
+#### Usage
+
+```groovy
+apollo {
+  generateTransformedQueries = true
+}
+```
+
+## Incubating plugin
+The incubating plugin is available in the SNAPSHOTS starting with version 1.2.0-SNAPSHOT.
+Compared to the current plugin, it:
+* is 100% written in Kotlin for autocompletion and compile-time type safety.
+* has a notion of `service` for declaring multiple schemas and their GraphQL files.
+* replaces `outputPackageName` with `rootPackageName` so that the package hierarchy is not flattened. ([issue](https://github.com/apollographql/apollo-android/issues/1367))
+* adds a `downloadXYZSchema` to automatically update the schema.json. ([issue](https://github.com/apollographql/apollo-android/issues/1516))
+
+To test it, change the artifact from `apollo-gradle-plugin` to `apollo-gradle-plugin-incubating`:
+
+```groovy
+buildscript {
+  repositories {
+    maven { url 'https://oss.sonatype.org/content/repositories/snapshots/' }
+  }
+  dependencies {
+    classpath 'com.apollographql.apollo:apollo-gradle-plugin-incubating:1.2.0-SNAPSHOT'
+  }
+}
+```
+
+You might have to change your configuration block, especially if you're using `outputPackageName` and/or `exclude` options. The apollo configuration now looks like:
+
+```groovy
+apollo {
+  generateKotlinModels = true
+  customTypeMapping = ["DateTime": "java.util.Date"]
+  // useSemanticNaming and other root options do not change
+  // ...
+
+  /**
+   * Use a service to define a schema and associated graphql files.
+   * You can omit this block altogether and the plugin will default to the found schema.json and .graphql files.
+   * You need to define it if you want to configure it more.
+   */
+  service("starwars") {
+    /**
+     * schemaFilePath is the path to the schema.json file relative to the current project directory.
+     * schemaFilePath can point outside of src/{variant}/graphql but in that case, you'll want
+     * to define `rootPackageName` else fragments/types will be stored at the root of the namespace.
+     * By default, the plugin will look for a schema.json file in src/{variant}/graphql
+     * This parameter is mandatory.
+     */
+    schemaFilePath = "src/main/graphql/com/starwars/schema.json"
+
+    /**
+     * sourceFolderPath is the path to the folder where graphql files are searched.
+     * sourceFolderPath is relative to the current sourceSet (e.g src/{variant}/graphql/{sourceFolderPath})
+     * By default, this is the directory where the schema.json is stored or "." if the schema is outside e.g. src/{variant}/graphql.
+     * You need to define this if you have two or more services whose schema is stored outside src/{variant}/graphql.
+     * If not, you can certainly omit it.
+     * This parameter is optional.
+     */
+    sourceFolderPath = "com/starwars"
+
+    /**
+     * list of pattern of files to exclude as in PatternFilterable.
+     * This parameter is optional.
+     */
+    exclude = []
+
+    /**
+     * The introspection block is used to add a `downloadXYZApolloSchema` task to update your schema.json easily
+     * This block is optional.
+     */
+    introspection {
+      /**
+       * the HTTP endpoint of your GraphQL service.
+       */
+      endpointUrl = "https://api.example.com/graphql"
+
+      /**
+       * Extra query parameters needed by your service
+       */
+      queryParameters = []
+
+      /**
+       * Extra headers needed by your service
+       */
+      headers = []
+    }
+  }
+
+  /**
+   * There can be any number of services
+   */
+  service("githunt") {
+    schemaFilePath = "src/main/graphql/com/githunt/schema.json"
+    // etc..
+  }
+}
+```
+
+The incubating plugin will replace the existing plugin in a future verison.
 
 ## License
 

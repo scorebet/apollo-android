@@ -12,14 +12,15 @@ import com.apollographql.apollo.api.ResponseField
 import com.apollographql.apollo.api.ResponseFieldMapper
 import com.apollographql.apollo.api.ResponseFieldMarshaller
 import com.apollographql.apollo.api.ResponseReader
+import com.apollographql.apollo.internal.QueryDocumentMinifier
 import com.example.fragment_in_fragment.fragment.StarshipFragment
 import kotlin.Array
 import kotlin.String
 import kotlin.Suppress
 import kotlin.collections.List
 
-@Suppress("NAME_SHADOWING", "LocalVariableName", "RemoveExplicitTypeArguments",
-    "NestedLambdaShadowedImplicitParameter")
+@Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
+    "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
 class AllStarships : Query<AllStarships.Data, AllStarships.Data, Operation.Variables> {
   override fun operationId(): String = OPERATION_ID
   override fun queryDocument(): String = QUERY_DOCUMENT
@@ -167,45 +168,51 @@ class AllStarships : Query<AllStarships.Data, AllStarships.Data, Operation.Varia
 
   companion object {
     const val OPERATION_ID: String =
-        "6c00a8f52589439b636c7ae6e7d58dd405e41a856291dd869bcf9cd8aed85db2"
+        "1296a4041eb330b2810e426f9347f76c6df3a969ab7f7e56f250bf9c6a07982e"
 
-    val QUERY_DOCUMENT: String = """
-        |query AllStarships {
-        |  allStarships(first: 7) {
-        |    __typename
-        |    edges {
-        |      __typename
-        |      node {
-        |        __typename
-        |        ...starshipFragment
-        |      }
-        |    }
-        |  }
-        |}
-        |fragment starshipFragment on Starship {
-        |  __typename
-        |  id
-        |  name
-        |  pilotConnection {
-        |    __typename
-        |    edges {
-        |      __typename
-        |      node {
-        |        __typename
-        |        ...pilotFragment
-        |      }
-        |    }
-        |  }
-        |}
-        |fragment pilotFragment on Person {
-        |  __typename
-        |  name
-        |  homeworld {
-        |    __typename
-        |    name
-        |  }
-        |}
-        """.trimMargin()
+    val QUERY_DOCUMENT: String = QueryDocumentMinifier.minify(
+          """
+          |query AllStarships {
+          |  allStarships(first: 7) {
+          |    __typename
+          |    edges {
+          |      __typename
+          |      node {
+          |        __typename
+          |        ...starshipFragment
+          |      }
+          |    }
+          |  }
+          |}
+          |fragment starshipFragment on Starship {
+          |  __typename
+          |  id
+          |  name
+          |  pilotConnection {
+          |    __typename
+          |    edges {
+          |      __typename
+          |      node {
+          |        __typename
+          |        ...pilotFragment
+          |      }
+          |    }
+          |  }
+          |}
+          |fragment pilotFragment on Person {
+          |  __typename
+          |  name
+          |  homeworld {
+          |    __typename
+          |    ...planetFragment
+          |  }
+          |}
+          |fragment planetFragment on Planet {
+          |  __typename
+          |  name
+          |}
+          """.trimMargin()
+        )
 
     val OPERATION_NAME: OperationName = OperationName { "AllStarships" }
   }

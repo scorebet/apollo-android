@@ -15,6 +15,7 @@ import com.apollographql.apollo.api.ResponseReader;
 import com.apollographql.apollo.api.ResponseWriter;
 import com.apollographql.apollo.api.internal.Optional;
 import com.apollographql.apollo.api.internal.Utils;
+import com.apollographql.apollo.internal.QueryDocumentMinifier;
 import java.lang.Double;
 import java.lang.Object;
 import java.lang.Override;
@@ -26,20 +27,22 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery.Data>, Operation.Variables> {
-  public static final String OPERATION_ID = "b3d6f01547404e80d05a9f4fba26ab482a559d03c2ff5ec832234bb045a6d5d4";
+  public static final String OPERATION_ID = "40e95b8824cd8b5da64969cc5fc32d89ee15fde55084fd41513967e521a8a687";
 
-  public static final String QUERY_DOCUMENT = "query TestQuery {\n"
-      + "  hero {\n"
-      + "    __typename\n"
-      + "    name\n"
-      + "    ... on Human {\n"
-      + "      height\n"
-      + "    }\n"
-      + "    ... on Droid {\n"
-      + "      primaryFunction\n"
-      + "    }\n"
-      + "  }\n"
-      + "}";
+  public static final String QUERY_DOCUMENT = QueryDocumentMinifier.minify(
+    "query TestQuery {\n"
+        + "  hero {\n"
+        + "    __typename\n"
+        + "    name\n"
+        + "    ... on Human {\n"
+        + "      height\n"
+        + "    }\n"
+        + "    ... on Droid {\n"
+        + "      primaryFunction\n"
+        + "    }\n"
+        + "  }\n"
+        + "}"
+  );
 
   public static final OperationName OPERATION_NAME = new OperationName() {
     @Override
@@ -188,6 +191,17 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
 
     ResponseFieldMarshaller marshaller();
 
+    default <T> T visit(Visitor<T> visitor) {
+      if (this instanceof AsHuman) {
+        return visitor.visit((AsHuman) this);
+      } else if (this instanceof AsDroid) {
+        return visitor.visit((AsDroid) this);
+      } else if (this instanceof AsCharacter) {
+        return visitor.visit((AsCharacter) this);
+      }
+      return visitor.visitDefault(this);
+    }
+
     final class Mapper implements ResponseFieldMapper<Hero> {
       final AsHuman.Mapper asHumanFieldMapper = new AsHuman.Mapper();
 
@@ -217,6 +231,16 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
         }
         return asCharacterFieldMapper.map(reader);
       }
+    }
+
+    interface Visitor<T> {
+      T visitDefault(@NotNull Hero hero);
+
+      T visit(@NotNull AsHuman asHuman);
+
+      T visit(@NotNull AsDroid asDroid);
+
+      T visit(@NotNull AsCharacter asCharacter);
     }
   }
 
