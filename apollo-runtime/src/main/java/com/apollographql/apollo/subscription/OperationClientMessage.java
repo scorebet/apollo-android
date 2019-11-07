@@ -86,7 +86,7 @@ public abstract class OperationClientMessage {
       if (enableAutoPersistedQueries) {
         writer.name(JSON_KEY_ID).value(subscription.operationId());
       } else {
-        writer.name(JSON_KEY_QUERY).value(subscription.queryDocument().replaceAll("\\n", ""));
+        writer.name(JSON_KEY_QUERY).value(subscription.queryDocument());
       }
       writer.name(JSON_KEY_VARIABLES).beginObject();
       subscription.variables().marshaller().marshal(new InputFieldJsonWriter(writer, scalarTypeAdapters));

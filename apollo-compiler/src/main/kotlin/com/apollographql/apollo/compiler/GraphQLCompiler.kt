@@ -6,60 +6,59 @@ import com.apollographql.apollo.compiler.ir.CodeGenerationIR
 import com.apollographql.apollo.compiler.ir.ScalarType
 import com.apollographql.apollo.compiler.ir.TypeDeclaration
 import com.squareup.javapoet.JavaFile
-import com.squareup.javapoet.TypeSpec
-import com.squareup.moshi.Moshi
 import java.io.File
 
 class GraphQLCompiler {
-  private val moshi = Moshi.Builder().build()
-  private val irAdapter = moshi.adapter(CodeGenerationIR::class.java)
-
   fun write(args: Arguments) {
-    val ir = irAdapter.fromJson(args.irFile.readText())!!
-    val irPackageName = args.outputPackageName ?: args.irFile.absolutePath.formatPackageName()
-    val fragmentsPackage = if (irPackageName.isNotEmpty()) "$irPackageName.fragment" else "fragment"
-    val typesPackage = if (irPackageName.isNotEmpty()) "$irPackageName.type" else "type"
+    val ir = args.ir
     val customTypeMap = args.customTypeMap.supportedTypeMap(ir.typesUsed)
     val context = CodeGenerationContext(
         reservedTypeNames = emptyList(),
         typeDeclarations = ir.typesUsed,
-        fragmentsPackage = fragmentsPackage,
-        typesPackage = typesPackage,
+        packageNameProvider = args.packageNameProvider,
         customTypeMap = customTypeMap,
         nullableValueType = args.nullableValueType,
         ir = ir,
         useSemanticNaming = args.useSemanticNaming,
         generateModelBuilder = args.generateModelBuilder,
         useJavaBeansSemanticNaming = args.useJavaBeansSemanticNaming,
-        suppressRawTypesWarning = args.suppressRawTypesWarning
+        suppressRawTypesWarning = args.suppressRawTypesWarning,
+        generateVisitorForPolymorphicDatatypes = args.generateVisitorForPolymorphicDatatypes
     )
 
-    if (irPackageName.isNotEmpty()) {
-      File(args.outputDir, irPackageName.replace('.', File.separatorChar)).deleteRecursively()
+    val schemaPackageName = (args.packageNameProvider as? DeprecatedPackageNameProvider)?.schemaPackageName
+    if (schemaPackageName != null && schemaPackageName.isNotBlank()) {
+      File(args.outputDir, schemaPackageName.replace('.', File.separatorChar)).deleteRecursively()
     }
 
     if (args.generateKotlinModels) {
       GraphQLKompiler(
-          irFile = args.irFile,
+          ir = ir,
           customTypeMap = args.customTypeMap,
-          outputPackageName = args.outputPackageName,
-          useSemanticNaming = args.useSemanticNaming
+          useSemanticNaming = args.useSemanticNaming,
+          packageNameProvider = args.packageNameProvider
       ).write(args.outputDir)
     } else {
       ir.writeJavaFiles(
           context = context,
-          outputDir = args.outputDir,
-          outputPackageName = args.outputPackageName
+          outputDir = args.outputDir
       )
+    }
+
+    args.transformedQueriesOutputDir?.let { transformedQueriesOutputDir ->
+      if (transformedQueriesOutputDir.exists()) {
+        transformedQueriesOutputDir.deleteRecursively()
+      }
+      val transformedQueryOutput = TransformedQueryOutput()
+      transformedQueryOutput.apply { visit(ir) }.writeTo(transformedQueriesOutputDir)
     }
   }
 
-  private fun CodeGenerationIR.writeJavaFiles(context: CodeGenerationContext, outputDir: File,
-      outputPackageName: String?) {
+  private fun CodeGenerationIR.writeJavaFiles(context: CodeGenerationContext, outputDir: File) {
     fragments.forEach {
       val typeSpec = it.toTypeSpec(context.copy())
       JavaFile
-          .builder(context.fragmentsPackage, typeSpec)
+          .builder(context.packageNameProvider.fragmentsPackageName, typeSpec)
           .addFileComment(AUTO_GENERATED_FILE)
           .build()
           .writeTo(outputDir)
@@ -68,7 +67,7 @@ class GraphQLCompiler {
     typesUsed.supportedTypeDeclarations().forEach {
       val typeSpec = it.toTypeSpec(context.copy())
       JavaFile
-          .builder(context.typesPackage, typeSpec)
+          .builder(context.packageNameProvider.typesPackageName, typeSpec)
           .addFileComment(AUTO_GENERATED_FILE)
           .build()
           .writeTo(outputDir)
@@ -77,7 +76,7 @@ class GraphQLCompiler {
     if (context.customTypeMap.isNotEmpty()) {
       val typeSpec = CustomEnumTypeSpecBuilder(context.copy()).build()
       JavaFile
-          .builder(context.typesPackage, typeSpec)
+          .builder(context.packageNameProvider.typesPackageName, typeSpec)
           .addFileComment(AUTO_GENERATED_FILE)
           .build()
           .writeTo(outputDir)
@@ -85,7 +84,7 @@ class GraphQLCompiler {
 
     operations.map { OperationTypeSpecBuilder(it, fragments, context.useSemanticNaming) }
         .forEach {
-          val packageName = outputPackageName ?: it.operation.filePath.formatPackageName()
+          val packageName = context.packageNameProvider.operationPackageName(it.operation.filePath)
           val typeSpec = it.toTypeSpec(context.copy())
           JavaFile
               .builder(packageName, typeSpec)
@@ -112,20 +111,27 @@ class GraphQLCompiler {
     @JvmField
     val OUTPUT_DIRECTORY = listOf("generated", "source", "apollo", "classes")
     @JvmField
-    val IR_OUTPUT_DIRECTORY = listOf("generated", "source", "apollo", "generatedIR")
-    const val APOLLOCODEGEN_VERSION = "0.19.1"
+    val TRANSFORMED_QUERIES_OUTPUT_DIRECTORY = listOf("generated", "apollo", "transformedQueries")
   }
 
   data class Arguments(
-      val irFile: File,
+      val ir: CodeGenerationIR,
       val outputDir: File,
       val customTypeMap: Map<String, String>,
-      val nullableValueType: NullableValueType,
       val useSemanticNaming: Boolean,
+      val packageNameProvider: PackageNameProvider,
+      val generateKotlinModels: Boolean = false,
+      val transformedQueriesOutputDir: File? = null,
+
+      // only if generateKotlinModels = false
+      val nullableValueType: NullableValueType,
+      // only if generateKotlinModels = false
       val generateModelBuilder: Boolean,
+      // only if generateKotlinModels = false
       val useJavaBeansSemanticNaming: Boolean,
-      val outputPackageName: String?,
+      // only if generateKotlinModels = false
       val suppressRawTypesWarning: Boolean,
-      val generateKotlinModels: Boolean = false
+      // only if generateKotlinModels = false
+      val generateVisitorForPolymorphicDatatypes: Boolean = false
   )
 }

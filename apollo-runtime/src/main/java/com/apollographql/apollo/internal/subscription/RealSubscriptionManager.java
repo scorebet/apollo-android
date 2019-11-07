@@ -7,19 +7,22 @@ import com.apollographql.apollo.exception.ApolloNetworkException;
 import com.apollographql.apollo.internal.ResponseFieldMapperFactory;
 import com.apollographql.apollo.response.OperationResponseParser;
 import com.apollographql.apollo.response.ScalarTypeAdapters;
+import com.apollographql.apollo.subscription.OnSubscriptionManagerStateChangeListener;
 import com.apollographql.apollo.subscription.OperationClientMessage;
 import com.apollographql.apollo.subscription.OperationServerMessage;
+import com.apollographql.apollo.subscription.SubscriptionConnectionParamsProvider;
+import com.apollographql.apollo.subscription.SubscriptionManagerState;
 import com.apollographql.apollo.subscription.SubscriptionTransport;
-
 import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -34,37 +37,40 @@ public final class RealSubscriptionManager implements SubscriptionManager {
   static final long CONNECTION_ACKNOWLEDGE_TIMEOUT = TimeUnit.SECONDS.toMillis(5);
   static final long INACTIVITY_TIMEOUT = TimeUnit.SECONDS.toMillis(10);
 
-  Map<String, SubscriptionRecord> subscriptions = new LinkedHashMap<>();
-  volatile State state = State.DISCONNECTED;
+  Map<UUID, SubscriptionRecord> subscriptions = new LinkedHashMap<>();
+  volatile SubscriptionManagerState state = SubscriptionManagerState.DISCONNECTED;
   final AutoReleaseTimer timer = new AutoReleaseTimer();
 
   private final ScalarTypeAdapters scalarTypeAdapters;
   private final SubscriptionTransport transport;
-  private Map<String, Object> connectionParams;
+  private final SubscriptionConnectionParamsProvider connectionParams;
   private final Executor dispatcher;
   private final long connectionHeartbeatTimeoutMs;
   private final ResponseFieldMapperFactory responseFieldMapperFactory = new ResponseFieldMapperFactory();
   private final Runnable connectionAcknowledgeTimeoutTimerTask = new Runnable() {
-    @Override public void run() {
+    @Override
+    public void run() {
       onConnectionAcknowledgeTimeout();
     }
   };
   private final Runnable inactivityTimeoutTimerTask = new Runnable() {
-    @Override public void run() {
+    @Override
+    public void run() {
       onInactivityTimeout();
     }
   };
   private final Runnable connectionHeartbeatTimeoutTimerTask = new Runnable() {
-    @Override public void run() {
+    @Override
+    public void run() {
       onConnectionHeartbeatTimeout();
     }
   };
-  private final List<OnStateChangeListener> onStateChangeListeners = new CopyOnWriteArrayList<>();
+  private final List<OnSubscriptionManagerStateChangeListener> onStateChangeListeners = new CopyOnWriteArrayList<>();
   private boolean enableAutoPersistedQueries;
 
   public RealSubscriptionManager(@NotNull ScalarTypeAdapters scalarTypeAdapters,
-                                 @NotNull final SubscriptionTransport.Factory transportFactory, @NotNull Map<String, Object> connectionParams,
-                                 @NotNull final Executor dispatcher, long connectionHeartbeatTimeoutMs, boolean enableAutoPersistedQueries) {
+      @NotNull final SubscriptionTransport.Factory transportFactory, @NotNull SubscriptionConnectionParamsProvider connectionParams,
+      @NotNull final Executor dispatcher, long connectionHeartbeatTimeoutMs, boolean enableAutoPersistedQueries) {
     checkNotNull(scalarTypeAdapters, "scalarTypeAdapters == null");
     checkNotNull(transportFactory, "transportFactory == null");
     checkNotNull(dispatcher, "dispatcher == null");
@@ -78,8 +84,7 @@ public final class RealSubscriptionManager implements SubscriptionManager {
   }
 
   @Override
-  public <T> void subscribe(@NotNull final Subscription<?, T, ?> subscription,
-      @NotNull final SubscriptionManager.Callback<T> callback) {
+  public <T> void subscribe(@NotNull final Subscription<?, T, ?> subscription, @NotNull final SubscriptionManager.Callback<T> callback) {
     checkNotNull(subscription, "subscription == null");
     checkNotNull(callback, "callback == null");
     dispatcher.execute(new Runnable() {
@@ -107,11 +112,15 @@ public final class RealSubscriptionManager implements SubscriptionManager {
    */
   @Override
   public void start() {
+    final SubscriptionManagerState oldState;
     synchronized (this) {
-      if (state == State.STOPPED) {
-        setStateAndNotify(State.DISCONNECTED);
+      oldState = state;
+      if (state == SubscriptionManagerState.STOPPED) {
+        state = SubscriptionManagerState.DISCONNECTED;
       }
     }
+
+    notifyStateChanged(oldState, state);
   }
 
   /**
@@ -123,86 +132,139 @@ public final class RealSubscriptionManager implements SubscriptionManager {
    */
   @Override
   public void stop() {
-    synchronized (this) {
-      setStateAndNotify(State.STOPPING);
-      ArrayList<SubscriptionRecord> values = new ArrayList<>(subscriptions.values());
-      for (SubscriptionRecord subscription : values) {
-        doUnsubscribe(subscription.subscription);
+    dispatcher.execute(new Runnable() {
+      @Override public void run() {
+        doStop();
       }
-      disconnect(true);
-    }
+    });
   }
 
-  public void addOnStateChangeListener(@NotNull OnStateChangeListener onStateChangeListener) {
+  @Override public SubscriptionManagerState getState() {
+    return state;
+  }
+
+  @Override public void addOnStateChangeListener(@NotNull OnSubscriptionManagerStateChangeListener onStateChangeListener) {
     onStateChangeListeners.add(checkNotNull(onStateChangeListener, "onStateChangeListener == null"));
   }
 
-  public void removeOnStateChangeListener(@NotNull OnStateChangeListener onStateChangeListener) {
+  @Override public void removeOnStateChangeListener(@NotNull OnSubscriptionManagerStateChangeListener onStateChangeListener) {
     onStateChangeListeners.remove(checkNotNull(onStateChangeListener, "onStateChangeListener == null"));
   }
 
   void doSubscribe(Subscription subscription, SubscriptionManager.Callback callback) {
-    if (state == State.STOPPING || state == State.STOPPED) {
+    final SubscriptionManagerState oldState;
+    synchronized (this) {
+      oldState = state;
+
+      if (state != SubscriptionManagerState.STOPPING && state != SubscriptionManagerState.STOPPED) {
+        timer.cancelTask(INACTIVITY_TIMEOUT_TIMER_TASK_ID);
+
+        final UUID subscriptionId = UUID.randomUUID();
+
+        subscriptions.put(subscriptionId, new SubscriptionRecord(subscriptionId, subscription, callback));
+        if (state == SubscriptionManagerState.DISCONNECTED) {
+          state = SubscriptionManagerState.CONNECTING;
+          transport.connect();
+        } else if (state == SubscriptionManagerState.ACTIVE) {
+          transport.send(new OperationClientMessage.Start(subscriptionId.toString(), subscription, scalarTypeAdapters, enableAutoPersistedQueries));
+        }
+      }
+    }
+
+    if (oldState == SubscriptionManagerState.STOPPING || oldState == SubscriptionManagerState.STOPPED) {
       callback.onError(new ApolloSubscriptionException(
           "Illegal state: " + state.name() + " for subscriptions to be created."
-          + " SubscriptionManager.start() must be called to re-enable subscriptions."));
-      return;
+              + " SubscriptionManager.start() must be called to re-enable subscriptions."));
+    } else if (oldState == SubscriptionManagerState.CONNECTED) {
+      callback.onConnected();
     }
-    timer.cancelTask(INACTIVITY_TIMEOUT_TIMER_TASK_ID);
 
-    String subscriptionId = idForSubscription(subscription);
-    synchronized (this) {
-      if (subscriptions.containsKey(subscriptionId)) {
-        callback.onError(new ApolloSubscriptionException("Already subscribed"));
-        return;
-      }
-
-      subscriptions.put(subscriptionId, new SubscriptionRecord(subscription, callback));
-      if (state == State.DISCONNECTED) {
-        setStateAndNotify(State.CONNECTING);
-        transport.connect();
-      } else if (state == State.ACTIVE) {
-        transport.send(new OperationClientMessage.Start(subscriptionId, subscription, scalarTypeAdapters, enableAutoPersistedQueries));
-      }
-    }
+    notifyStateChanged(oldState, state);
   }
 
   void doUnsubscribe(Subscription subscription) {
-    String subscriptionId = idForSubscription(subscription);
-
-    SubscriptionRecord subscriptionRecord;
     synchronized (this) {
-      subscriptionRecord = subscriptions.remove(subscriptionId);
-      if ((subscriptionRecord != null) && (state == State.ACTIVE || state == State.STOPPING)) {
-        transport.send(new OperationClientMessage.Stop(subscriptionId));
+      SubscriptionRecord subscriptionRecord = null;
+      for (SubscriptionRecord record : subscriptions.values()) {
+        if (record.subscription == subscription) {
+          subscriptionRecord = record;
+        }
       }
 
-      if (subscriptions.isEmpty() && state != State.STOPPING) {
+      if (subscriptionRecord != null) {
+        subscriptions.remove(subscriptionRecord.id);
+        if (state == SubscriptionManagerState.ACTIVE || state == SubscriptionManagerState.STOPPING) {
+          transport.send(new OperationClientMessage.Stop(subscriptionRecord.id.toString()));
+        }
+      }
+
+      if (subscriptions.isEmpty() && state != SubscriptionManagerState.STOPPING) {
         startInactivityTimer();
       }
     }
   }
 
-  void onTransportConnected() {
-    Collection<SubscriptionRecord> subscriptionRecords;
+  void doStop() {
+    final Collection<SubscriptionRecord> subscriptionRecords;
+    final SubscriptionManagerState oldState;
     synchronized (this) {
+      oldState = state;
+      state = SubscriptionManagerState.STOPPING;
+
       subscriptionRecords = subscriptions.values();
-      setStateAndNotify(State.CONNECTED);
-      transport.send(new OperationClientMessage.Init(connectionParams));
+
+      if (oldState == SubscriptionManagerState.ACTIVE) {
+        for (SubscriptionRecord subscriptionRecord : subscriptionRecords) {
+          transport.send(new OperationClientMessage.Stop(subscriptionRecord.id.toString()));
+        }
+      }
+
+      state = SubscriptionManagerState.STOPPED;
+
+      transport.disconnect(new OperationClientMessage.Terminate());
+      subscriptions = new LinkedHashMap<>();
+    }
+
+    for (SubscriptionRecord record : subscriptionRecords) {
+      record.notifyOnCompleted();
+    }
+
+    notifyStateChanged(oldState, SubscriptionManagerState.STOPPING);
+    notifyStateChanged(SubscriptionManagerState.STOPPING, state);
+  }
+
+  void onTransportConnected() {
+    final Collection<SubscriptionRecord> subscriptionRecords;
+
+    final SubscriptionManagerState oldState;
+    synchronized (this) {
+      oldState = state;
+
+      if (state == SubscriptionManagerState.CONNECTING) {
+        subscriptionRecords = subscriptions.values();
+        state = SubscriptionManagerState.CONNECTED;
+        transport.send(new OperationClientMessage.Init(connectionParams.provide()));
+      } else {
+        subscriptionRecords = Collections.emptyList();
+      }
+
+      if (state == SubscriptionManagerState.CONNECTED) {
+        timer.schedule(CONNECTION_ACKNOWLEDGE_TIMEOUT_TIMER_TASK_ID, connectionAcknowledgeTimeoutTimerTask, CONNECTION_ACKNOWLEDGE_TIMEOUT);
+      }
     }
 
     for (SubscriptionRecord record : subscriptionRecords) {
       record.callback.onConnected();
     }
 
-    timer.schedule(CONNECTION_ACKNOWLEDGE_TIMEOUT_TIMER_TASK_ID, connectionAcknowledgeTimeoutTimerTask,
-        CONNECTION_ACKNOWLEDGE_TIMEOUT);
+    notifyStateChanged(oldState, state);
   }
 
   void onConnectionAcknowledgeTimeout() {
     timer.cancelTask(CONNECTION_ACKNOWLEDGE_TIMEOUT_TIMER_TASK_ID);
     dispatcher.execute(new Runnable() {
-      @Override public void run() {
+      @Override
+      public void run() {
         onTransportFailure(new ApolloNetworkException("Subscription server is not responding"));
       }
     });
@@ -211,19 +273,15 @@ public final class RealSubscriptionManager implements SubscriptionManager {
   void onInactivityTimeout() {
     timer.cancelTask(INACTIVITY_TIMEOUT_TIMER_TASK_ID);
     dispatcher.execute(new Runnable() {
-      @Override public void run() {
+      @Override
+      public void run() {
         disconnect(false);
       }
     });
   }
 
   void onTransportFailure(Throwable t) {
-    Collection<SubscriptionRecord> subscriptionRecords;
-    synchronized (this) {
-      subscriptionRecords = subscriptions.values();
-      disconnect(true);
-    }
-
+    Collection<SubscriptionRecord> subscriptionRecords = disconnect(true);
     for (SubscriptionRecord record : subscriptionRecords) {
       record.notifyOnNetworkError(t);
     }
@@ -255,38 +313,54 @@ public final class RealSubscriptionManager implements SubscriptionManager {
    *
    * @param force if true, always disconnect web socket, regardless of the status of {@link #subscriptions}
    */
-  void disconnect(boolean force) {
+  Collection<SubscriptionRecord> disconnect(boolean force) {
+    final SubscriptionManagerState oldState;
+    final Collection<SubscriptionRecord> subscriptionRecords;
     synchronized (this) {
+      oldState = state;
+      subscriptionRecords = subscriptions.values();
       if (force || subscriptions.isEmpty()) {
         transport.disconnect(new OperationClientMessage.Terminate());
-        State disconnectionState = (state == State.STOPPING) ? State.STOPPED : State.DISCONNECTED;
-        setStateAndNotify(disconnectionState);
+        state = (state == SubscriptionManagerState.STOPPING) ? SubscriptionManagerState.STOPPED : SubscriptionManagerState.DISCONNECTED;
         subscriptions = new LinkedHashMap<>();
       }
     }
+
+    notifyStateChanged(oldState, state);
+
+    return subscriptionRecords;
   }
 
   void onConnectionHeartbeatTimeout() {
+    final SubscriptionManagerState oldState;
     synchronized (this) {
+      oldState = state;
+      state = SubscriptionManagerState.DISCONNECTED;
       transport.disconnect(new OperationClientMessage.Terminate());
-      setStateAndNotify(State.DISCONNECTED);
-
-      setStateAndNotify(State.CONNECTING);
+      state = SubscriptionManagerState.CONNECTING;
       transport.connect();
     }
+
+    notifyStateChanged(oldState, SubscriptionManagerState.DISCONNECTED);
+    notifyStateChanged(SubscriptionManagerState.DISCONNECTED, SubscriptionManagerState.CONNECTING);
   }
 
   void onConnectionClosed() {
     Collection<SubscriptionRecord> subscriptionRecords;
+    final SubscriptionManagerState oldState;
     synchronized (this) {
+      oldState = state;
+
       subscriptionRecords = subscriptions.values();
-      setStateAndNotify(State.DISCONNECTED);
+      state = SubscriptionManagerState.DISCONNECTED;
       subscriptions = new LinkedHashMap<>();
     }
 
     for (SubscriptionRecord record : subscriptionRecords) {
       record.callback.onTerminated();
     }
+
+    notifyStateChanged(oldState, state);
   }
 
   private void resetConnectionKeepAliveTimerTask() {
@@ -294,8 +368,7 @@ public final class RealSubscriptionManager implements SubscriptionManager {
       return;
     }
     synchronized (this) {
-      timer.schedule(CONNECTION_KEEP_ALIVE_TIMEOUT_TIMER_TASK_ID, connectionHeartbeatTimeoutTimerTask,
-          connectionHeartbeatTimeoutMs);
+      timer.schedule(CONNECTION_KEEP_ALIVE_TIMEOUT_TIMER_TASK_ID, connectionHeartbeatTimeoutTimerTask, connectionHeartbeatTimeoutMs);
     }
   }
 
@@ -308,7 +381,11 @@ public final class RealSubscriptionManager implements SubscriptionManager {
     String subscriptionId = message.id != null ? message.id : "";
     SubscriptionRecord subscriptionRecord;
     synchronized (this) {
-      subscriptionRecord = subscriptions.get(subscriptionId);
+      try {
+        subscriptionRecord = subscriptions.get(UUID.fromString(subscriptionId));
+      } catch (IllegalArgumentException e) {
+        subscriptionRecord = null;
+      }
     }
 
     if (subscriptionRecord != null) {
@@ -332,15 +409,22 @@ public final class RealSubscriptionManager implements SubscriptionManager {
   }
 
   private void onConnectionAcknowledgeServerMessage() {
-    timer.cancelTask(CONNECTION_ACKNOWLEDGE_TIMEOUT_TIMER_TASK_ID);
+    final SubscriptionManagerState oldState;
     synchronized (this) {
-      setStateAndNotify(State.ACTIVE);
-      for (Map.Entry<String, SubscriptionRecord> entry : subscriptions.entrySet()) {
-        String subscriptionId = entry.getKey();
-        Subscription<?, ?, ?> subscription = entry.getValue().subscription;
-        transport.send(new OperationClientMessage.Start(subscriptionId, subscription, scalarTypeAdapters, enableAutoPersistedQueries));
+      oldState = state;
+
+      timer.cancelTask(CONNECTION_ACKNOWLEDGE_TIMEOUT_TIMER_TASK_ID);
+
+      if (state == SubscriptionManagerState.CONNECTED) {
+        state = SubscriptionManagerState.ACTIVE;
+        for (SubscriptionRecord subscriptionRecord : subscriptions.values()) {
+          transport.send(new OperationClientMessage.Start(subscriptionRecord.id.toString(), subscriptionRecord.subscription,
+              scalarTypeAdapters, enableAutoPersistedQueries));
+        }
       }
     }
+
+    notifyStateChanged(oldState, state);
   }
 
   private void onErrorServerMessage(OperationServerMessage.Error message) {
@@ -362,7 +446,12 @@ public final class RealSubscriptionManager implements SubscriptionManager {
   private SubscriptionRecord removeSubscriptionById(String subscriptionId) {
     SubscriptionRecord subscriptionRecord;
     synchronized (this) {
-      subscriptionRecord = subscriptions.remove(subscriptionId);
+      try {
+        subscriptionRecord = subscriptions.remove(UUID.fromString(subscriptionId));
+      } catch (IllegalArgumentException e) {
+        subscriptionRecord = null;
+      }
+
       if (subscriptions.isEmpty()) {
         startInactivityTimer();
       }
@@ -370,32 +459,23 @@ public final class RealSubscriptionManager implements SubscriptionManager {
     return subscriptionRecord;
   }
 
-  private void setStateAndNotify(State newState) {
-    State oldState = state;
-    state = newState;
-    for (OnStateChangeListener onStateChangeListener : onStateChangeListeners) {
+  private void notifyStateChanged(SubscriptionManagerState oldState, SubscriptionManagerState newState) {
+    if (oldState == newState) {
+      return;
+    }
+
+    for (OnSubscriptionManagerStateChangeListener onStateChangeListener : onStateChangeListeners) {
       onStateChangeListener.onStateChange(oldState, newState);
     }
   }
 
-  static String idForSubscription(Subscription<?, ?, ?> subscription) {
-    return subscription.operationId() + "$" + subscription.variables().valueMap().hashCode();
-  }
-
-  enum State {
-    DISCONNECTED,
-    CONNECTING,
-    CONNECTED,
-    ACTIVE,
-    STOPPING,
-    STOPPED
-  }
-
   private static class SubscriptionRecord {
+    final UUID id;
     final Subscription<?, ?, ?> subscription;
     final SubscriptionManager.Callback<?> callback;
 
-    SubscriptionRecord(Subscription<?, ?, ?> subscription, SubscriptionManager.Callback<?> callback) {
+    SubscriptionRecord(UUID id, Subscription<?, ?, ?> subscription, SubscriptionManager.Callback<?> callback) {
+      this.id = id;
       this.subscription = subscription;
       this.callback = callback;
     }
@@ -430,7 +510,8 @@ public final class RealSubscriptionManager implements SubscriptionManager {
     @Override
     public void onConnected() {
       dispatcher.execute(new Runnable() {
-        @Override public void run() {
+        @Override
+        public void run() {
           delegate.onTransportConnected();
         }
       });
@@ -439,7 +520,8 @@ public final class RealSubscriptionManager implements SubscriptionManager {
     @Override
     public void onFailure(final Throwable t) {
       dispatcher.execute(new Runnable() {
-        @Override public void run() {
+        @Override
+        public void run() {
           delegate.onTransportFailure(t);
         }
       });
@@ -448,7 +530,8 @@ public final class RealSubscriptionManager implements SubscriptionManager {
     @Override
     public void onMessage(final OperationServerMessage message) {
       dispatcher.execute(new Runnable() {
-        @Override public void run() {
+        @Override
+        public void run() {
           delegate.onOperationServerMessage(message);
         }
       });
@@ -457,7 +540,8 @@ public final class RealSubscriptionManager implements SubscriptionManager {
     @Override
     public void onClosed() {
       dispatcher.execute(new Runnable() {
-        @Override public void run() {
+        @Override
+        public void run() {
           delegate.onConnectionClosed();
         }
       });
@@ -470,7 +554,8 @@ public final class RealSubscriptionManager implements SubscriptionManager {
 
     void schedule(final int taskId, final Runnable task, long delay) {
       TimerTask timerTask = new TimerTask() {
-        @Override public void run() {
+        @Override
+        public void run() {
           try {
             task.run();
           } finally {
@@ -491,7 +576,6 @@ public final class RealSubscriptionManager implements SubscriptionManager {
 
         timer.schedule(timerTask, delay);
       }
-
     }
 
     void cancelTask(int taskId) {
@@ -507,9 +591,5 @@ public final class RealSubscriptionManager implements SubscriptionManager {
         }
       }
     }
-  }
-
-  interface OnStateChangeListener {
-    void onStateChange(State fromState, State toState);
   }
 }

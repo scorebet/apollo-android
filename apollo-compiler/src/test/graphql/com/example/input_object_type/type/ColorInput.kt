@@ -15,13 +15,13 @@ import kotlin.Suppress
 /**
  * The input object sent when passing in a color
  */
-@Suppress("NAME_SHADOWING", "LocalVariableName", "RemoveExplicitTypeArguments",
-    "NestedLambdaShadowedImplicitParameter")
+@Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
+    "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
 data class ColorInput(
   /**
    * Red color
    */
-  val red: Int,
+  val red: Int = 1,
   /**
    * Green color
    */
@@ -29,11 +29,15 @@ data class ColorInput(
   /**
    * Blue color
    */
-  val blue: Double,
+  val blue: Double = 1.5,
   /**
    * for test purpose only
    */
-  val enumWithDefaultValue: Input<Episode> = Input.optional(Episode.safeValueOf("new"))
+  val enumWithDefaultValue: Input<Episode> = Input.optional(Episode.safeValueOf("new")),
+  /**
+   * Circle ref to review input
+   */
+  val reviewRefInput: Input<ReviewRefInput> = Input.absent()
 ) : InputType {
   override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller { writer ->
     writer.writeInt("red", red)
@@ -41,5 +45,7 @@ data class ColorInput(
     writer.writeDouble("blue", blue)
     if (enumWithDefaultValue.defined) writer.writeString("enumWithDefaultValue",
         enumWithDefaultValue.value?.rawValue)
+    if (reviewRefInput.defined) writer.writeObject("reviewRefInput",
+        reviewRefInput.value?.marshaller())
   }
 }

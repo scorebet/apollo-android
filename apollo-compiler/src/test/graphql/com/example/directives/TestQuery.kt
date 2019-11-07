@@ -13,6 +13,7 @@ import com.apollographql.apollo.api.ResponseField
 import com.apollographql.apollo.api.ResponseFieldMapper
 import com.apollographql.apollo.api.ResponseFieldMarshaller
 import com.apollographql.apollo.api.ResponseReader
+import com.apollographql.apollo.internal.QueryDocumentMinifier
 import kotlin.Any
 import kotlin.Array
 import kotlin.Boolean
@@ -22,8 +23,8 @@ import kotlin.Suppress
 import kotlin.collections.Map
 import kotlin.jvm.Transient
 
-@Suppress("NAME_SHADOWING", "LocalVariableName", "RemoveExplicitTypeArguments",
-    "NestedLambdaShadowedImplicitParameter")
+@Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
+    "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
 data class TestQuery(
   val includeName: Boolean,
   val skipFriends: Boolean
@@ -147,20 +148,22 @@ data class TestQuery(
 
   companion object {
     const val OPERATION_ID: String =
-        "e442e7d1da90271c3ea02f2b50cdc9fb858fc830cce998243e0ce085595f3ec2"
+        "c2c4bbf6368fd611eb19628164b0ef04ccad73f4c96b0416c254b8375b5d04f8"
 
-    val QUERY_DOCUMENT: String = """
-        |query TestQuery(${'$'}includeName: Boolean!, ${'$'}skipFriends: Boolean!) {
-        |  hero {
-        |    __typename
-        |    name @include(if: ${'$'}includeName)
-        |    friendsConnection @skip(if: ${'$'}skipFriends) {
-        |      __typename
-        |      totalCount
-        |    }
-        |  }
-        |}
-        """.trimMargin()
+    val QUERY_DOCUMENT: String = QueryDocumentMinifier.minify(
+          """
+          |query TestQuery(${'$'}includeName: Boolean!, ${'$'}skipFriends: Boolean!) @operationDirective(dummy: "hello") {
+          |  hero {
+          |    __typename
+          |    name @include(if: ${'$'}includeName)
+          |    friendsConnection @skip(if: ${'$'}skipFriends) {
+          |      __typename
+          |      totalCount
+          |    }
+          |  }
+          |}
+          """.trimMargin()
+        )
 
     val OPERATION_NAME: OperationName = OperationName { "TestQuery" }
   }

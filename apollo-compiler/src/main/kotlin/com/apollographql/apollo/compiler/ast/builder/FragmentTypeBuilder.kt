@@ -1,37 +1,48 @@
 package com.apollographql.apollo.compiler.ast.builder
 
 import com.apollographql.apollo.compiler.ast.FieldType
-import com.apollographql.apollo.compiler.ast.FragmentType
 import com.apollographql.apollo.compiler.ast.ObjectType
 import com.apollographql.apollo.compiler.ast.TypeRef
 import com.apollographql.apollo.compiler.escapeKotlinReservedWord
 import com.apollographql.apollo.compiler.ir.Fragment
 
-internal fun Fragment.ast(context: Context): FragmentType {
+internal fun Fragment.ast(context: Context): ObjectType {
+  val typeRef = context.registerObjectType(
+      name = fragmentName.capitalize().escapeKotlinReservedWord(),
+      schemaTypeName = "",
+      fragmentSpreads = fragmentSpreads,
+      inlineFragments = emptyList(),
+      fields = fields,
+      singularize = false,
+      kind = ObjectType.Kind.Fragment(
+          definition = source,
+          possibleTypes = possibleTypes
+      )
+  )
   val inlineFragmentField = inlineFragments.takeIf { it.isNotEmpty() }?.inlineFragmentField(
       type = fragmentName,
       schemaType = typeCondition,
       context = context
   )
-  return FragmentType(
-      name = fragmentName.capitalize().escapeKotlinReservedWord(),
-      definition = source,
-      possibleTypes = possibleTypes,
-      fields = fields.map { it.ast(context) }.let { if (inlineFragmentField != null) it + inlineFragmentField else it },
-      nestedObjects = context.objectTypes
-  )
+  val nestedObjects = context.minus(typeRef)
+  return context[typeRef]!!.run {
+    copy(
+        fields = fields.let { if (inlineFragmentField != null) it + inlineFragmentField else it },
+        nestedObjects = nestedObjects
+    )
+  }
 }
 
-internal fun List<Fragment>.astObjectFieldType(
+internal fun List<Fragment>.astFragmentsObjectFieldType(
     fragmentsPackage: String,
     isOptional: Fragment.() -> Boolean
 ): Pair<ObjectType.Field?, ObjectType?> {
   if (isEmpty()) {
     return null to null
   }
-  val type = ObjectType.Object(
-      className = "Fragments",
-      schemaName = "Fragments",
+  val type = ObjectType(
+      name = "Fragments",
+      schemaTypeName = "",
       fields = map { fragment ->
         ObjectType.Field(
             name = fragment.fragmentName.decapitalize().escapeKotlinReservedWord(),
@@ -51,14 +62,15 @@ internal fun List<Fragment>.astObjectFieldType(
             }
         )
       },
-      fragmentsType = null
+      fragmentsType = null,
+      kind = ObjectType.Kind.Object
   )
   val field = ObjectType.Field(
-      name = type.className.decapitalize().escapeKotlinReservedWord(),
+      name = type.name.decapitalize().escapeKotlinReservedWord(),
       responseName = "__typename",
       schemaName = "__typename",
       type = FieldType.Fragments(
-          name = type.className,
+          name = type.name,
           fields = type.fields.map { field ->
             FieldType.Fragments.Field(
                 name = field.name,

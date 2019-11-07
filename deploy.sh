@@ -12,7 +12,6 @@ echo ${YELLOW}Deploying Api ...${CLEAR}
 ./gradlew clean :apollo-api:bintrayUpload
 echo ${YELLOW}Deploying Api - ${GREEN}Done!${CLEAR}
 
-
 echo ${YELLOW}Deploying Compiler ...${CLEAR}
 ./gradlew clean :apollo-compiler:bintrayUpload
 echo ${YELLOW}Deploying Compiler - ${GREEN}Done!${CLEAR}
@@ -29,6 +28,10 @@ echo ${YELLOW}Deploying Gradle Plugin ...${CLEAR}
 ./gradlew clean :apollo-gradle-plugin:bintrayUpload
 echo ${YELLOW}Deploying Gradle Plugin - ${GREEN}Done!${CLEAR}
 
+echo ${YELLOW}Deploying Gradle Plugin Incubating...${CLEAR}
+./gradlew clean :apollo-gradle-plugin-incubating:bintrayUpload
+echo ${YELLOW}Deploying Gradle Plugin Incubating - ${GREEN}Done!${CLEAR}
+
 echo ${YELLOW}Deploying Http Cache ...${CLEAR}
 ./gradlew clean :apollo-http-cache:bintrayUpload
 echo ${YELLOW}Deploying Http Cache - ${GREEN}Done!${CLEAR}
@@ -40,9 +43,5 @@ echo ${YELLOW}Deploying Runtime - ${GREEN}Done!${CLEAR}
 echo ${YELLOW}Deploying Rx2 Support ...${CLEAR}
 ./gradlew clean :apollo-rx2-support:bintrayUpload
 echo ${YELLOW}Deploying Rx2 Support - ${GREEN}Done!${CLEAR}
-
-echo ${YELLOW}Deploying Rx Support ...${CLEAR}
-./gradlew clean :apollo-rx-support:bintrayUpload
-echo ${YELLOW}Deploying Rx Support - ${GREEN}Done!${CLEAR}
 
 echo ${GREEN}ALL DONE!${CLEAR}

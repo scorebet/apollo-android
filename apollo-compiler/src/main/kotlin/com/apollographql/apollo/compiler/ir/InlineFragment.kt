@@ -9,15 +9,18 @@ import javax.lang.model.element.Modifier
 
 data class InlineFragment(
     val typeCondition: String,
-    val possibleTypes: List<String>?,
+    val possibleTypes: List<String> = emptyList(),
     val fields: List<Field>,
-    val fragmentSpreads: List<String>?
+    val fragmentRefs: List<FragmentRef>,
+    val sourceLocation: SourceLocation
 ) : CodeGenerator {
+  val fragmentSpreads: List<String> = fragmentRefs.map { it.name }
+
   override fun toTypeSpec(context: CodeGenerationContext, abstract: Boolean): TypeSpec =
       SchemaTypeSpecBuilder(
           typeName = formatClassName(),
           fields = fields,
-          fragmentSpreads = fragmentSpreads ?: emptyList(),
+          fragmentSpreads = fragmentSpreads,
           inlineFragments = emptyList(),
           context = context,
           abstract = abstract

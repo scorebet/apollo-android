@@ -1,5 +1,11 @@
 .gradle
-/.idea
+**/.idea/*.xml
+**/.idea/caches/
+**/.idea/copyright/
+**/.idea/inspectionProfiles/
+**/.idea/libraries/
+**/.idea/$PRODUCT_WORKSPACE_FILE$
+**/.idea/.gitignore
 *.iml
 build
 local.properties
@@ -20,4 +26,3 @@ package-lock.json
 **/.project
 .vscode/**
 **/bin
-/apollo-kotlin-sample/github_token

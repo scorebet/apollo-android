@@ -8,25 +8,28 @@ data class Field(
     val responseName: String,
     val fieldName: String,
     val type: String,
-    val args: List<Argument>? = null,
+    val args: List<Argument> = emptyList(),
     val isConditional: Boolean = false,
-    val fields: List<Field>? = null,
-    val fragmentSpreads: List<String>? = null,
-    val inlineFragments: List<InlineFragment>? = null,
-    val description: String? = null,
-    val isDeprecated: Boolean? = false,
-    val deprecationReason: String? = null,
-    val conditions: List<Condition>? = null
+    val fields: List<Field> = emptyList(),
+    val fragmentRefs: List<FragmentRef>,
+    val inlineFragments: List<InlineFragment> = emptyList(),
+    val description: String = "",
+    val isDeprecated: Boolean = false,
+    val deprecationReason: String = "",
+    val conditions: List<Condition> = emptyList(),
+    val sourceLocation: SourceLocation
 ) : CodeGenerator {
 
+  val fragmentSpreads: List<String> = fragmentRefs.map { it.name }
+
   override fun toTypeSpec(context: CodeGenerationContext, abstract: Boolean): TypeSpec {
-    val fields = if (isNonScalar()) fields!! else emptyList()
+    val fields = if (isNonScalar()) fields else emptyList()
     return SchemaTypeSpecBuilder(
         typeName = formatClassName(),
         schemaType = type,
         fields = fields,
-        fragmentSpreads = fragmentSpreads ?: emptyList(),
-        inlineFragments = inlineFragments ?: emptyList(),
+        fragmentSpreads = fragmentSpreads,
+        inlineFragments = inlineFragments,
         context = context,
         abstract = abstract
     )
@@ -53,9 +56,9 @@ data class Field(
         .addModifiers(Modifier.PUBLIC)
         .returns(returnTypeName)
         .addStatement("return this.\$L", responseName.escapeJavaReservedWord())
-        .let { if (description != null) it.addJavadoc("\$L\n", description) else it }
+        .let { if (description.isNotEmpty()) it.addJavadoc("\$L\n", description) else it }
         .let {
-          if (isDeprecated == true && !deprecationReason.isNullOrBlank()) {
+          if (isDeprecated && deprecationReason.isNotEmpty()) {
             it.addJavadoc("@deprecated \$L\n", deprecationReason)
           } else {
             it
@@ -71,22 +74,24 @@ data class Field(
   }
 
   fun argumentCodeBlock(): CodeBlock {
-    if (args == null || args.isEmpty()) return CodeBlock.of("null")
+    if (args.isEmpty()) return CodeBlock.of("null")
 
     val mapBuilderClass = ClassNames.parameterizedUnmodifiableMapBuilderOf(String::class.java, Any::class.java)
     return args
         .map { (name, value, type) ->
           when (value) {
             is Number -> {
-              val scalarType = ScalarType.forName(type.removeSuffix("!"))
-              when (scalarType) {
+              when (ScalarType.forName(type.removeSuffix("!"))) {
                 is ScalarType.INT -> CodeBlock.of(".put(\$S, \$L)\n", name, value.toInt())
                 is ScalarType.FLOAT -> CodeBlock.of(".put(\$S, \$Lf)\n", name, value.toDouble())
                 else -> CodeBlock.of(".put(\$S, \$L)\n", name, value)
               }
             }
             is Boolean -> CodeBlock.of(".put(\$S, \$L)\n", name, value)
-            is Map<*, *> -> CodeBlock.of(".put(\$S, \$L)\n", name, jsonMapToCodeBlock(value as Map<String, Any?>))
+            is Map<*, *> -> {
+              @Suppress("UNCHECKED_CAST")
+              CodeBlock.of(".put(\$S, \$L)\n", name, jsonMapToCodeBlock(value as Map<String, Any?>))
+            }
             else -> CodeBlock.of(".put(\$S, \$S)\n", name, value)
           }
         }
@@ -95,14 +100,19 @@ data class Field(
         .build()
   }
 
-  fun formatClassName() = responseName.let { if (isList()) it.singularize() else it }.capitalize()
+  fun formatClassName() = responseName.let { if (isList()) it.singularize() else it }.let { originalClassName ->
+    var className = originalClassName
+    while (className.first() == '_') {
+      className = className.removeRange(0, 1)
+    }
+    "_".repeat(originalClassName.length - className.length) + className.capitalize()
+  }
 
-  fun isOptional(): Boolean = isConditional || !methodResponseType().endsWith("!")
-      || (inlineFragments?.isNotEmpty() ?: false)
+  fun isOptional(): Boolean = isConditional || !methodResponseType().endsWith("!") || inlineFragments.isNotEmpty()
 
-  fun isNonScalar() = hasFragments() || (fields?.any() ?: false)
+  fun isNonScalar() = hasFragments() || fields.any()
 
-  private fun hasFragments() = (fragmentSpreads?.any() ?: false) || (inlineFragments?.any() ?: false)
+  private fun hasFragments() = fragmentSpreads.any() || inlineFragments.any()
 
   private fun isList(): Boolean = type.removeSuffix("!").let { it.startsWith('[') && it.endsWith(']') }
 
@@ -111,6 +121,7 @@ data class Field(
     return map
         .map { (key, value) ->
           if (value is Map<*, *>) {
+            @Suppress("UNCHECKED_CAST")
             CodeBlock.of(".put(\$S, \$L)\n", key, jsonMapToCodeBlock(value as Map<String, Any?>))
           } else {
             CodeBlock.of(".put(\$S, \$S)\n", key, value)
@@ -123,7 +134,7 @@ data class Field(
   }
 
   private fun toTypeName(responseType: String, context: CodeGenerationContext): TypeName {
-    val packageName = if (isNonScalar()) "" else context.typesPackage
+    val packageName = if (isNonScalar()) "" else context.packageNameProvider.typesPackageName
     return JavaTypeResolver(context, packageName, isDeprecated ?: false).resolve(responseType, isOptional())
   }
 
@@ -154,6 +165,12 @@ data class Field(
   }
 
   companion object {
-    val TYPE_NAME_FIELD = Field(responseName = "__typename", fieldName = "__typename", type = "String!")
+    val TYPE_NAME_FIELD = Field(
+        responseName = "__typename",
+        fieldName = "__typename",
+        type = "String!",
+        fragmentRefs = emptyList(),
+        sourceLocation = SourceLocation.UNKNOWN
+    )
   }
 }

@@ -4,19 +4,21 @@ import com.apollographql.apollo.compiler.ast.*
 import com.apollographql.apollo.compiler.escapeKotlinReservedWord
 import com.apollographql.apollo.compiler.ir.Operation
 import com.apollographql.apollo.compiler.sha256
+import com.apollographql.apollo.internal.QueryDocumentMinifier
 
 internal fun Operation.ast(
     operationClassName: String,
     context: Context
 ): OperationType {
-  val dataTypeRef = context.addObjectType(typeName = "Data") {
-    ObjectType.Object(
-        className = "Data",
-        schemaName = "Data",
-        fields = fields.map { it.ast(context) },
-        fragmentsType = null
-    )
-  }
+  val dataTypeRef = context.registerObjectType(
+      name = "Data",
+      schemaTypeName = "",
+      fragmentSpreads = emptyList(),
+      inlineFragments = emptyList(),
+      fields = fields,
+      singularize = false,
+      kind = ObjectType.Kind.Object
+  )
   val operationType = when {
     isQuery() -> OperationType.Type.QUERY
     isMutation() -> OperationType.Type.MUTATION
@@ -27,8 +29,8 @@ internal fun Operation.ast(
       name = operationClassName,
       type = operationType,
       operationName = operationName,
-      operationId = (sourceWithFragments ?: "").filter { it != '\n' }.sha256(),
-      queryDocument = sourceWithFragments!!,
+      operationId = QueryDocumentMinifier.minify(sourceWithFragments).sha256(),
+      queryDocument = sourceWithFragments,
       variables = InputType(
           name = "Variables",
           description = "",
@@ -49,7 +51,7 @@ internal fun Operation.ast(
           }
       ),
       data = dataTypeRef,
-      nestedObjects = context.objectTypes,
+      nestedObjects = context,
       filePath = filePath
   )
 }

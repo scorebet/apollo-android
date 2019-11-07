@@ -31,10 +31,10 @@ import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
  *
  * A common configuration is to have secondary SQL cache.
  */
-public final class LruNormalizedCache extends NormalizedCache {
+public class LruNormalizedCache extends NormalizedCache {
   private final Cache<String, Record> lruCache;
 
-  LruNormalizedCache(EvictionPolicy evictionPolicy) {
+  public LruNormalizedCache(EvictionPolicy evictionPolicy) {
     final CacheBuilder<Object, Object> lruCacheBuilder = CacheBuilder.newBuilder();
     if (evictionPolicy.maxSizeBytes().isPresent()) {
       lruCacheBuilder.maximumWeight(evictionPolicy.maxSizeBytes().get())
@@ -133,6 +133,11 @@ public final class LruNormalizedCache extends NormalizedCache {
       lruCache.put(apolloRecord.key(), oldRecord);
       return changedKeys;
     }
+  }
+
+  @Nullable
+  public Record getIfPresent(@NotNull final String key) {
+    return lruCache.getIfPresent(key);
   }
 
   @Override public Map<Class, Map<String, Record>> dump() {

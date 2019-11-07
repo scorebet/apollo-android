@@ -12,12 +12,14 @@ import com.apollographql.apollo.api.ResponseField
 import com.apollographql.apollo.api.ResponseFieldMapper
 import com.apollographql.apollo.api.ResponseFieldMarshaller
 import com.apollographql.apollo.api.ResponseReader
+import com.apollographql.apollo.internal.QueryDocumentMinifier
+import com.example.hero_name.type.CustomType
 import kotlin.Array
 import kotlin.String
 import kotlin.Suppress
 
-@Suppress("NAME_SHADOWING", "LocalVariableName", "RemoveExplicitTypeArguments",
-    "NestedLambdaShadowedImplicitParameter")
+@Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
+    "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
 class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
   override fun operationId(): String = OPERATION_ID
   override fun queryDocument(): String = QUERY_DOCUMENT
@@ -33,25 +35,33 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
     /**
      * The name of the character
      */
-    val name: String
+    val name: String,
+    /**
+     * The ID of the character
+     */
+    val id: String
   ) {
     fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
       it.writeString(RESPONSE_FIELDS[0], __typename)
       it.writeString(RESPONSE_FIELDS[1], name)
+      it.writeCustom(RESPONSE_FIELDS[2] as ResponseField.CustomTypeField, id)
     }
 
     companion object {
       private val RESPONSE_FIELDS: Array<ResponseField> = arrayOf(
           ResponseField.forString("__typename", "__typename", null, false, null),
-          ResponseField.forString("name", "name", null, false, null)
+          ResponseField.forString("name", "name", null, false, null),
+          ResponseField.forCustomType("id", "id", null, false, CustomType.ID, null)
           )
 
       operator fun invoke(reader: ResponseReader): Hero {
         val __typename = reader.readString(RESPONSE_FIELDS[0])
         val name = reader.readString(RESPONSE_FIELDS[1])
+        val id = reader.readCustomType<String>(RESPONSE_FIELDS[2] as ResponseField.CustomTypeField)
         return Hero(
           __typename = __typename,
-          name = name
+          name = name,
+          id = id
         )
       }
     }
@@ -83,16 +93,23 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
 
   companion object {
     const val OPERATION_ID: String =
-        "8b2daaf4bcd7b88157fe5d1ac7fb10e91a375f4d13ce1d049ed2bbc6cecf7431"
+        "c10c6dfe569b0fbb60c67e42c973f7ffef2314b43004c527a03bdd790ef0f5dc"
 
-    val QUERY_DOCUMENT: String = """
-        |query TestQuery {
-        |  hero {
-        |    __typename
-        |    name
-        |  }
-        |}
-        """.trimMargin()
+    val QUERY_DOCUMENT: String = QueryDocumentMinifier.minify(
+          """
+          |query TestQuery {
+          |  hero {
+          |    __typename
+          |    name
+          |  }
+          |  hero {
+          |    __typename
+          |    id
+          |    name
+          |  }
+          |}
+          """.trimMargin()
+        )
 
     val OPERATION_NAME: OperationName = OperationName { "TestQuery" }
   }

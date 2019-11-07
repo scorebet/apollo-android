@@ -8,7 +8,7 @@ import com.squareup.javapoet.*
 import javax.lang.model.element.Modifier
 
 /**
- * Responsible for [Fragments.Mapper] class generation
+ * Responsible for Fragments.Mapper class generation
  *
  * Example of generated class:
  *
@@ -61,14 +61,14 @@ class FragmentsResponseMapperBuilder(
   private fun initFragmentsCode(fragmentFields: List<FieldSpec>): CodeBlock {
     val codeBuilder = fragmentFields.fold(CodeBlock.builder()) { builder, fragmentField ->
       val fieldClass = fragmentField.type.unwrapOptionalType(withoutAnnotations = true) as ClassName
-      if (fragmentField.type.isOptional()) {
+      if (fragmentField.type.isNullable()) {
         builder.addStatement("\$T \$N = null", fieldClass, fragmentField)
       } else {
         builder.addStatement("\$T \$N = \$L.map(\$L)", fieldClass, fragmentField, fieldClass.mapperFieldName(), READER_VAR)
       }
     }
     fragmentFields.fold(codeBuilder) { builder, fragmentField ->
-      if (fragmentField.type.isOptional()) {
+      if (fragmentField.type.isNullable()) {
         builder.add(initFragmentCode(fragmentField))
       } else {
         builder
@@ -106,7 +106,7 @@ class FragmentsResponseMapperBuilder(
       fragments
           .map { it.type.unwrapOptionalType(withoutAnnotations = true) as ClassName }
           .map {
-            val mapperClassName = ClassName.get(context.fragmentsPackage, it.simpleName(),
+            val mapperClassName = ClassName.get(context.packageNameProvider.fragmentsPackageName, it.simpleName(),
                 Util.RESPONSE_FIELD_MAPPER_TYPE_NAME)
             FieldSpec.builder(mapperClassName, it.mapperFieldName(), Modifier.FINAL)
                 .initializer(CodeBlock.of("new \$T()", mapperClassName))

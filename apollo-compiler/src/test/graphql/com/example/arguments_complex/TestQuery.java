@@ -19,6 +19,7 @@ import com.apollographql.apollo.api.ResponseWriter;
 import com.apollographql.apollo.api.internal.Optional;
 import com.apollographql.apollo.api.internal.UnmodifiableMapBuilder;
 import com.apollographql.apollo.api.internal.Utils;
+import com.apollographql.apollo.internal.QueryDocumentMinifier;
 import com.example.arguments_complex.type.Episode;
 import java.io.IOException;
 import java.lang.Double;
@@ -33,15 +34,17 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery.Data>, TestQuery.Variables> {
-  public static final String OPERATION_ID = "b884beff93e8ae07fb00cfbb6f95ce377673dc97fd56f4a3ce2608dc8f48a8b6";
+  public static final String OPERATION_ID = "ea0219363b8af60b029b30af551861cbae30648978be2060651eacc0e34a79d0";
 
-  public static final String QUERY_DOCUMENT = "query TestQuery($episode: Episode, $stars: Int!, $greenValue: Float!) {\n"
-      + "  heroWithReview(episode: $episode, review: {stars: $stars, favoriteColor: {red: 0, green: $greenValue, blue: 0}}) {\n"
-      + "    __typename\n"
-      + "    name\n"
-      + "    height(unit: FOOT)\n"
-      + "  }\n"
-      + "}";
+  public static final String QUERY_DOCUMENT = QueryDocumentMinifier.minify(
+    "query TestQuery($episode: Episode, $stars: Int!, $greenValue: Float!) {\n"
+        + "  heroWithReview(episode: $episode, review: {stars: $stars, favoriteColor: {red: 0, green: $greenValue, blue: 0}, listOfStringNonOptional: []}, listOfInts: [$stars, $stars]) {\n"
+        + "    __typename\n"
+        + "    name\n"
+        + "    height(unit: FOOT)\n"
+        + "  }\n"
+        + "}"
+  );
 
   public static final OperationName OPERATION_NAME = new OperationName() {
     @Override
@@ -180,25 +183,27 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
 
   public static class Data implements Operation.Data {
     static final ResponseField[] $responseFields = {
-      ResponseField.forObject("heroWithReview", "heroWithReview", new UnmodifiableMapBuilder<String, Object>(2)
+      ResponseField.forObject("heroWithReview", "heroWithReview", new UnmodifiableMapBuilder<String, Object>(3)
       .put("episode", new UnmodifiableMapBuilder<String, Object>(2)
         .put("kind", "Variable")
         .put("variableName", "episode")
         .build())
-      .put("review", new UnmodifiableMapBuilder<String, Object>(2)
+      .put("review", new UnmodifiableMapBuilder<String, Object>(3)
         .put("stars", new UnmodifiableMapBuilder<String, Object>(2)
           .put("kind", "Variable")
           .put("variableName", "stars")
           .build())
         .put("favoriteColor", new UnmodifiableMapBuilder<String, Object>(3)
-          .put("red", "0.0")
+          .put("red", "0")
           .put("green", new UnmodifiableMapBuilder<String, Object>(2)
             .put("kind", "Variable")
             .put("variableName", "greenValue")
             .build())
           .put("blue", "0.0")
           .build())
+        .put("listOfStringNonOptional", "[]")
         .build())
+      .put("listOfInts", "[{kind=Variable, variableName=stars}, {kind=Variable, variableName=stars}]")
       .build(), true, Collections.<ResponseField.Condition>emptyList())
     };
 

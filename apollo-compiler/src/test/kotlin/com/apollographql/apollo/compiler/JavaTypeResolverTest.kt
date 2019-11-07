@@ -9,18 +9,23 @@ import org.junit.Test
 import java.util.*
 
 class JavaTypeResolverTest {
+  private val packageNameProvider = DeprecatedPackageNameProvider(
+      rootPackageName = "",
+      outputPackageName = null,
+      schemaPackageName = ""
+  )
   private val defaultContext = CodeGenerationContext(
       reservedTypeNames = emptyList(),
       typeDeclarations = emptyList(),
-      fragmentsPackage = "",
-      typesPackage = "",
+      packageNameProvider = packageNameProvider,
       customTypeMap = emptyMap(),
       nullableValueType = NullableValueType.APOLLO_OPTIONAL,
       ir = CodeGenerationIR(emptyList(), emptyList(), emptyList()),
       useSemanticNaming = false,
       generateModelBuilder = false,
       useJavaBeansSemanticNaming = false,
-      suppressRawTypesWarning = false
+      suppressRawTypesWarning = false,
+      generateVisitorForPolymorphicDatatypes = false
   )
   private val defaultResolver = JavaTypeResolver(defaultContext, packageName)
 

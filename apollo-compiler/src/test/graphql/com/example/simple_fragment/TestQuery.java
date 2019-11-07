@@ -16,6 +16,7 @@ import com.apollographql.apollo.api.ResponseReader;
 import com.apollographql.apollo.api.ResponseWriter;
 import com.apollographql.apollo.api.internal.Optional;
 import com.apollographql.apollo.api.internal.Utils;
+import com.apollographql.apollo.internal.QueryDocumentMinifier;
 import com.example.simple_fragment.fragment.HeroDetails;
 import com.example.simple_fragment.fragment.HumanDetails;
 import java.lang.Object;
@@ -28,23 +29,26 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery.Data>, Operation.Variables> {
-  public static final String OPERATION_ID = "f258982f7e2b12d61c678aa68c0baee6ae552768b670dd2f56b92d36c1cfd83b";
+  public static final String OPERATION_ID = "11b6156b253df199195798f2de386724580e3882c9888f7e5d1685c42b64e0cf";
 
-  public static final String QUERY_DOCUMENT = "query TestQuery {\n"
-      + "  hero {\n"
-      + "    __typename\n"
-      + "    ...HeroDetails\n"
-      + "    ...HumanDetails\n"
-      + "  }\n"
-      + "}\n"
-      + "fragment HeroDetails on Character {\n"
-      + "  __typename\n"
-      + "  name\n"
-      + "}\n"
-      + "fragment HumanDetails on Human {\n"
-      + "  __typename\n"
-      + "  name\n"
-      + "}";
+  public static final String QUERY_DOCUMENT = QueryDocumentMinifier.minify(
+    "query TestQuery {\n"
+        + "  hero {\n"
+        + "    __typename\n"
+        + "    ...HeroDetails\n"
+        + "    ...HumanDetails\n"
+        + "  }\n"
+        + "}\n"
+        + "fragment HeroDetails on Character {\n"
+        + "  __typename\n"
+        + "  name\n"
+        + "  ... HumanDetails\n"
+        + "}\n"
+        + "fragment HumanDetails on Human {\n"
+        + "  __typename\n"
+        + "  name\n"
+        + "}"
+  );
 
   public static final OperationName OPERATION_NAME = new OperationName() {
     @Override
@@ -187,7 +191,6 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
       ResponseField.forFragment("__typename", "__typename", Arrays.asList("Human",
-      "Human",
       "Droid"))
     };
 

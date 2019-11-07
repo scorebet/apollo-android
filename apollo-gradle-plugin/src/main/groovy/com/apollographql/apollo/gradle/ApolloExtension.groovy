@@ -2,6 +2,7 @@ package com.apollographql.apollo.gradle
 
 import com.apollographql.apollo.compiler.NullableValueType
 import org.gradle.api.Project
+import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
 
 class ApolloExtension {
@@ -13,9 +14,11 @@ class ApolloExtension {
   final Property<Boolean> useJavaBeansSemanticNaming
   final Property<Boolean> suppressRawTypesWarning
   final Property<Boolean> generateKotlinModels
+  final Property<Boolean> generateVisitorForPolymorphicDatatypes
   final Property<String> schemaFilePath
   final Property<String> outputPackageName
-  final Property<Map> customTypeMapping
+  final Property<Boolean> generateTransformedQueries
+  final MapProperty<String, String> customTypeMapping
 
   ApolloExtension(Project project) {
     nullableValueType = project.objects.property(String.class)
@@ -36,13 +39,19 @@ class ApolloExtension {
     generateKotlinModels = project.objects.property(Boolean.class)
     generateKotlinModels.set(false)
 
+    generateVisitorForPolymorphicDatatypes = project.objects.property(Boolean.class)
+    generateVisitorForPolymorphicDatatypes.set(false)
+
     schemaFilePath = project.objects.property(String.class)
     schemaFilePath.set("")
 
     outputPackageName = project.objects.property(String.class)
     outputPackageName.set("")
 
-    customTypeMapping = project.objects.property(Map.class)
+    generateTransformedQueries = project.objects.property(Boolean.class)
+    generateTransformedQueries.set(false)
+
+    customTypeMapping = project.objects.mapProperty(String.class, String.class)
     customTypeMapping.set(new LinkedHashMap())
   }
 
@@ -70,12 +79,20 @@ class ApolloExtension {
     this.generateKotlinModels.set(generateKotlinModels)
   }
 
+  void setGenerateVisitorForPolymorphicDatatypes(Boolean generateVisitorForPolymorphicDatatypes) {
+    this.generateKotlinModels.set(generateVisitorForPolymorphicDatatypes)
+  }
+
   void setSchemaFilePath(String schemaFilePath) {
     this.schemaFilePath.set(schemaFilePath)
   }
 
   void setOutputPackageName(String outputPackageName) {
     this.outputPackageName.set(outputPackageName)
+  }
+
+  void setGenerateTransformedQueries(Boolean generateTransformedQueries) {
+    this.generateTransformedQueries.set(generateTransformedQueries)
   }
 
   void setCustomTypeMapping(Map customTypeMapping) {

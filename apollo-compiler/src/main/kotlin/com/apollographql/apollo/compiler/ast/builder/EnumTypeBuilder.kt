@@ -6,14 +6,14 @@ import com.apollographql.apollo.compiler.ir.TypeDeclaration
 
 internal fun TypeDeclaration.ast() = EnumType(
     name = name.capitalize().escapeKotlinReservedWord(),
-    description = description ?: "",
-    values = values?.map { value ->
+    description = description,
+    values = values.map { value ->
       EnumType.Value(
           constName = value.name.toUpperCase().escapeKotlinReservedWord(),
           value = value.name,
-          description = value.description ?: "",
-          isDeprecated = value.isDeprecated ?: false,
-          deprecationReason = value.deprecationReason ?: ""
+          description = value.description,
+          isDeprecated = value.isDeprecated,
+          deprecationReason = value.deprecationReason
       )
-    } ?: emptyList()
+    }
 )

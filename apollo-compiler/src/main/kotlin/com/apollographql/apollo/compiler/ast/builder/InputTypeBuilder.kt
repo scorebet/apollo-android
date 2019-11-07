@@ -3,7 +3,6 @@ package com.apollographql.apollo.compiler.ast.builder
 import com.apollographql.apollo.compiler.ast.EnumType
 import com.apollographql.apollo.compiler.ast.FieldType
 import com.apollographql.apollo.compiler.ast.InputType
-import com.apollographql.apollo.compiler.codegen.kotlin.KotlinCodeGen.normalizeJsonValue
 import com.apollographql.apollo.compiler.escapeKotlinReservedWord
 import com.apollographql.apollo.compiler.ir.TypeDeclaration
 
@@ -13,8 +12,8 @@ internal fun TypeDeclaration.ast(
     typesPackageName: String
 ) = InputType(
     name = name.capitalize().escapeKotlinReservedWord(),
-    description = description ?: "",
-    fields = fields?.map { field ->
+    description = description,
+    fields = fields.map { field ->
       val inputFieldType = resolveFieldType(
           graphQLType = field.type,
           enums = enums,
@@ -25,11 +24,11 @@ internal fun TypeDeclaration.ast(
           name = field.name.decapitalize().escapeKotlinReservedWord(),
           schemaName = field.name,
           type = inputFieldType,
-          description = field.description ?: "",
+          description = field.description,
           isOptional = !field.type.endsWith("!"),
-          defaultValue = if (inputFieldType.isCustomType) null else field.defaultValue?.normalizeJsonValue(field.type)
+          defaultValue = if (inputFieldType.isCustomType) null else field.defaultValue
       )
-    } ?: emptyList()
+    }
 )
 
 private val FieldType.isCustomType: Boolean
