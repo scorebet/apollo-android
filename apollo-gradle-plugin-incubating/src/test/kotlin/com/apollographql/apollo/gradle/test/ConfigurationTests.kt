@@ -1,6 +1,6 @@
 package com.apollographql.apollo.gradle.test
 
-import com.apollographql.apollo.compiler.child
+import com.apollographql.apollo.gradle.internal.child
 import com.apollographql.apollo.gradle.util.TestUtils
 import com.apollographql.apollo.gradle.util.TestUtils.withSimpleProject
 import com.apollographql.apollo.gradle.util.generatedChild
@@ -10,6 +10,7 @@ import org.hamcrest.CoreMatchers.containsString
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import java.nio.file.Files
 
 class ConfigurationTests {
   @Test
@@ -21,7 +22,7 @@ class ConfigurationTests {
       }
     """.trimIndent()) { dir ->
       TestUtils.executeTask("generateApolloSources", dir)
-      TestUtils.assertFileContains(dir, "main/service0/com/example/type/CustomType.java", "return Date.class;")
+      TestUtils.assertFileContains(dir, "main/service/com/example/type/CustomType.java", "return Date.class;")
     }
   }
 
@@ -40,7 +41,7 @@ class ConfigurationTests {
       }
     """.trimIndent()) { dir ->
         TestUtils.executeTask("generateApolloSources", dir)
-        TestUtils.assertFileContains(dir, "main/service0/com/example/DroidDetailsQuery.java", pair.second)
+        TestUtils.assertFileContains(dir, "main/service/com/example/DroidDetailsQuery.java", pair.second)
       }
     }
   }
@@ -50,7 +51,7 @@ class ConfigurationTests {
     withSimpleProject("""
     """.trimIndent()) { dir ->
       TestUtils.executeTask("generateApolloSources", dir)
-      TestUtils.assertFileContains(dir, "main/service0/com/example/DroidDetailsQuery.java", "class DroidDetailsQuery ")
+      TestUtils.assertFileContains(dir, "main/service/com/example/DroidDetailsQuery.java", "class DroidDetailsQuery ")
     }
   }
 
@@ -62,7 +63,7 @@ class ConfigurationTests {
       }
     """.trimIndent()) { dir ->
       TestUtils.executeTask("generateApolloSources", dir)
-      TestUtils.assertFileContains(dir, "main/service0/com/example/DroidDetails.java", "class DroidDetails ")
+      TestUtils.assertFileContains(dir, "main/service/com/example/DroidDetails.java", "class DroidDetails ")
     }
   }
 
@@ -71,7 +72,7 @@ class ConfigurationTests {
     withSimpleProject("""
     """.trimIndent()) { dir ->
       TestUtils.executeTask("generateApolloSources", dir)
-      TestUtils.assertFileDoesNotContain(dir, "main/service0/com/example/DroidDetailsQuery.java", "Builder toBuilder()")
+      TestUtils.assertFileDoesNotContain(dir, "main/service/com/example/DroidDetailsQuery.java", "Builder toBuilder()")
     }
   }
 
@@ -83,7 +84,7 @@ class ConfigurationTests {
       }
     """.trimIndent()) { dir ->
       TestUtils.executeTask("generateApolloSources", dir)
-      TestUtils.assertFileContains(dir, "main/service0/com/example/DroidDetailsQuery.java", "Builder toBuilder()")
+      TestUtils.assertFileContains(dir, "main/service/com/example/DroidDetailsQuery.java", "Builder toBuilder()")
     }
   }
 
@@ -92,7 +93,7 @@ class ConfigurationTests {
     withSimpleProject("""
     """.trimIndent()) { dir ->
       TestUtils.executeTask("generateApolloSources", dir)
-      TestUtils.assertFileContains(dir, "main/service0/com/example/DroidDetailsQuery.java", "String name()")
+      TestUtils.assertFileContains(dir, "main/service/com/example/DroidDetailsQuery.java", "String name()")
     }
   }
 
@@ -104,15 +105,29 @@ class ConfigurationTests {
       }
     """.trimIndent()) { dir ->
       TestUtils.executeTask("generateApolloSources", dir)
-      TestUtils.assertFileContains(dir, "main/service0/com/example/DroidDetailsQuery.java", "String getName()")
+      TestUtils.assertFileContains(dir, "main/service/com/example/DroidDetailsQuery.java", "String getName()")
     }
   }
 
   @Test
-  fun `schemaFilePath fails`() {
+  fun `rootPackageName works as expected`() {
     withSimpleProject("""
       apollo {
-        schemaFilePath = "schema.json"
+        rootPackageName("com.starwars")
+      }
+    """.trimIndent()) { dir ->
+      TestUtils.executeTask("generateApolloSources", dir)
+      assertTrue(dir.generatedChild("main/service/com/starwars/com/example/DroidDetailsQuery.java").isFile)
+      assertTrue(dir.generatedChild("main/service/com/starwars/com/example/type/CustomType.java").isFile)
+      assertTrue(dir.generatedChild("main/service/com/starwars/com/example/fragment/SpeciesInformation.java").isFile)
+    }
+  }
+
+  @Test
+  fun `schemaFilePath with absolute path fails`() {
+    withSimpleProject("""
+      apollo {
+        schemaFilePath = "/home/apollographql/schema.json"
       }
     """.trimIndent()) { dir ->
       var exception: Exception? = null
@@ -120,7 +135,25 @@ class ConfigurationTests {
         TestUtils.executeTask("generateApolloSources", dir)
       } catch (e: UnexpectedBuildFailure) {
         exception = e
-        assertThat(e.message, containsString("is not supported anymore"))
+        assertThat(e.message, containsString("schemaPath = \"/home/apollographql/schema.json\""))
+      }
+      assertNotNull(exception)
+    }
+  }
+
+  @Test
+  fun `schemaFilePath with relative path fails`() {
+    withSimpleProject("""
+      apollo {
+        schemaFilePath = "src/main/graphql/schema.json"
+      }
+    """.trimIndent()) { dir ->
+      var exception: Exception? = null
+      try {
+        TestUtils.executeTask("generateApolloSources", dir)
+      } catch (e: UnexpectedBuildFailure) {
+        exception = e
+        assertThat(e.message, containsString("schemaPath = \"schema.json\""))
       }
       assertNotNull(exception)
     }
@@ -202,7 +235,6 @@ class ConfigurationTests {
     }
   }
 
-
   @Test
   fun `sourceFolder can be changed`() {
     withSimpleProject("""
@@ -221,13 +253,50 @@ class ConfigurationTests {
       assertTrue(dir.generatedChild("main/starwars/fragment/SpeciesInformation.java").isFile)
     }
   }
-
+  
   @Test
-  fun `rootPackageName works as expected`() {
+  fun `schemaPath can be absolute path`() {
+    val schema = File(System.getProperty("user.dir"), "src/test/files/starwars/schema.json")
     withSimpleProject("""
       apollo {
+        service("starwars") {
+          schemaPath("${schema.absolutePath}")
+        }
+      }
+    """.trimIndent()) { dir ->
+      TestUtils.executeTask("generateApolloSources", dir)
+      TestUtils.assertFileContains(dir, "main/starwars/com/example/DroidDetailsQuery.java", "class DroidDetailsQuery ")
+    }
+  }
+
+  @Test
+  fun `sourceFolder can be absolute path`() {
+    val folder = File(System.getProperty("user.dir"), "src/test/files/starwars")
+    withSimpleProject("""
+      apollo {
+        service("starwars") {
+          sourceFolder("${folder.absolutePath}")
+        }
+      }
+    """.trimIndent()) { dir ->
+      File(dir, "src/main/graphql/com").deleteRecursively()
+
+      TestUtils.executeTask("generateApolloSources", dir)
+      println(dir.absolutePath)
+      dir.list()?.forEach(::println)
+      assertTrue(dir.generatedChild("main/starwars/DroidDetailsQuery.java").isFile)
+      assertTrue(dir.generatedChild("main/starwars/type/CustomType.java").isFile)
+      assertTrue(dir.generatedChild("main/starwars/fragment/SpeciesInformation.java").isFile)
+    }
+  }
+
+  @Test
+  fun `rootPackageName can be overridden in service`() {
+    withSimpleProject("""
+      apollo {
+        rootPackageName "com.something.else"
         service("service") {
-          rootPackageName = "com.starwars"
+          rootPackageName "com.starwars"
         }
       }
     """.trimIndent()) { dir ->
@@ -235,6 +304,49 @@ class ConfigurationTests {
       assertTrue(dir.generatedChild("main/service/com/starwars/com/example/DroidDetailsQuery.java").isFile)
       assertTrue(dir.generatedChild("main/service/com/starwars/com/example/type/CustomType.java").isFile)
       assertTrue(dir.generatedChild("main/service/com/starwars/com/example/fragment/SpeciesInformation.java").isFile)
+    }
+  }
+
+  @Test
+  fun `rootPackageName can be overridden in compilationUnits`() {
+    withSimpleProject("""
+      apollo {
+        rootPackageName "com.default"
+        service("starwars") {
+          rootPackageName "com.starwars"
+        }
+        onCompilationUnits {
+          rootPackageName.set("com.overrides")
+        }
+      }
+    """.trimIndent()) { dir ->
+      TestUtils.executeTask("generateApolloSources", dir)
+      assertTrue(dir.generatedChild("main/starwars/com/overrides/com/example/DroidDetailsQuery.java").isFile)
+      assertTrue(dir.generatedChild("main/starwars/com/overrides/com/example/type/CustomType.java").isFile)
+      assertTrue(dir.generatedChild("main/starwars/com/overrides/com/example/fragment/SpeciesInformation.java").isFile)
+    }
+  }
+
+  @Test
+  fun `sources can be overridden in compilationUnits`() {
+    withSimpleProject("""
+      apollo {
+        service("starwars") {
+          schemaPath("com/some/other/schema.json")
+          sourceFolder("com/some/other")
+        }
+        
+        onCompilationUnits {
+          schemaFile(file("src/main/graphql/com/example/schema.json"))
+          graphqlSourceDirectorySet.srcDir(file("src/main/graphql/"))
+          graphqlSourceDirectorySet.include("**/*.graphql")
+        }
+      }
+    """.trimIndent()) { dir ->
+      TestUtils.executeTask("generateApolloSources", dir)
+      assertTrue(dir.generatedChild("main/starwars/com/example/DroidDetailsQuery.java").isFile)
+      assertTrue(dir.generatedChild("main/starwars/com/example/type/CustomType.java").isFile)
+      assertTrue(dir.generatedChild("main/starwars/com/example/fragment/SpeciesInformation.java").isFile)
     }
   }
 
@@ -267,7 +379,7 @@ class ConfigurationTests {
       val result = TestUtils.executeTask("generateApolloSources", dir)
 
       assertEquals(TaskOutcome.SUCCESS, result.task(":generateApolloSources")!!.outcome)
-      val transformedQuery = dir.child("build", "generated", "transformedQueries", "apollo", "main", "service0", "com", "example", "DroidDetails.graphql")
+      val transformedQuery = dir.child("build", "generated", "transformedQueries", "apollo", "main", "service", "com", "example", "DroidDetails.graphql")
       assertThat(transformedQuery.readText(), containsString("__typename"))
     }
   }
@@ -278,17 +390,53 @@ class ConfigurationTests {
       apollo {
         generateTransformedQueries = true
         
-        compilationUnits.all { compilationUnit ->
-          tasks.register("customTask" + compilationUnit.name) {
+        onCompilationUnits { compilationUnit ->
+          tasks.register("customTask" + compilationUnit.name.capitalize()) {
             inputs.dir(compilationUnit.outputDir)
             inputs.dir(compilationUnit.transformedQueriesDir)
           }
         }
       }
     """.trimIndent()) { dir ->
-      val result = TestUtils.executeTask("customTaskmainservice0", dir)
+      val result = TestUtils.executeTask("customTaskMainservice", dir)
 
-      assertEquals(TaskOutcome.SUCCESS, result.task(":generateMainService0ApolloSources")!!.outcome)
+      assertEquals(TaskOutcome.SUCCESS, result.task(":generateMainServiceApolloSources")!!.outcome)
+    }
+  }
+
+  @Test
+  fun `symlinks are not followed for the schema`() {
+    withSimpleProject { dir ->
+      dir.child("src/main/graphql/com/example/schema.json").copyTo(dir.child("schema.json"))
+      dir.child("src/main/graphql/com/example/schema.json").delete()
+
+
+      Files.createSymbolicLink(dir.child(
+          "src/main/graphql/com/example/schema.json").toPath(),
+          dir.child("schema.json").toPath()
+      )
+
+      TestUtils.executeTask("generateApolloSources", dir)
+
+      assertTrue(dir.generatedChild("main/service/com/example/fragment/SpeciesInformation.java").isFile)
+    }
+  }
+
+  @Test
+  fun `symlinks are not followed for sources`() {
+    withSimpleProject { dir ->
+      dir.child("src/main/graphql/com/example").copyRecursively(dir.child("tmp"))
+      dir.child("src/main/graphql/com/").deleteRecursively()
+
+
+      Files.createSymbolicLink(
+          dir.child("src/main/graphql/example").toPath(),
+          dir.child("tmp").toPath()
+      )
+
+      TestUtils.executeTask("generateApolloSources", dir)
+
+      assertTrue(dir.generatedChild("main/service/example/fragment/SpeciesInformation.java").isFile)
     }
   }
 }

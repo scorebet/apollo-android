@@ -1,6 +1,6 @@
 package com.apollographql.apollo.gradle.test
 
-import com.apollographql.apollo.compiler.child
+import com.apollographql.apollo.gradle.internal.child
 import com.apollographql.apollo.gradle.util.TestUtils
 import com.apollographql.apollo.gradle.util.generatedChild
 import org.junit.Assert
@@ -27,7 +27,7 @@ class SourceDirectorySetTests {
       Assert.assertTrue(File(dir, "build/tmp/kotlin-classes/debug/com/example/DroidDetailsQuery.class").isFile)
       Assert.assertTrue(File(dir, "build/tmp/kotlin-classes/debug/com/example/Main.class").isFile)
       Assert.assertTrue(File(dir, "build/outputs/apk/debug/testProject-debug.apk").isFile)
-      Assert.assertTrue(dir.generatedChild("debug/service0/com/example/DroidDetailsQuery.kt").isFile)
+      Assert.assertTrue(dir.generatedChild("debug/service/com/example/DroidDetailsQuery.kt").isFile)
     }
   }
 
@@ -49,8 +49,54 @@ class SourceDirectorySetTests {
 
       Assert.assertTrue(File(dir, "build/classes/kotlin/main/com/example/DroidDetailsQuery.class").isFile)
       Assert.assertTrue(File(dir, "build/classes/kotlin/main/com/example/Main.class").isFile)
-      Assert.assertTrue(dir.generatedChild("main/service0/com/example/DroidDetailsQuery.kt").isFile)
+      Assert.assertTrue(dir.generatedChild("main/service/com/example/DroidDetailsQuery.kt").isFile)
       Assert.assertTrue(File(dir, "build/libs/testProject.jar").isFile)
+    }
+  }
+
+  @Test
+  fun `pure-jvm java models are reachable from kotlin code`() {
+    val apolloConfiguration = """
+      apollo {
+        generateKotlinModels = false
+      }
+    """.trimIndent()
+    TestUtils.withProject(usesKotlinDsl = false,
+        apolloConfiguration = apolloConfiguration,
+        plugins = listOf(TestUtils.javaPlugin, TestUtils.kotlinJvmPlugin, TestUtils.apolloPlugin)) { dir ->
+
+      val source = TestUtils.fixturesDirectory()
+      source.child("kotlin").copyRecursively(dir.child("src", "main", "kotlin"))
+
+      TestUtils.executeTask("build", dir)
+
+      Assert.assertTrue(File(dir, "build/classes/java/main/com/example/DroidDetailsQuery.class").isFile)
+      Assert.assertTrue(File(dir, "build/classes/kotlin/main/com/example/Main.class").isFile)
+      Assert.assertTrue(dir.generatedChild("main/service/com/example/DroidDetailsQuery.java").isFile)
+      Assert.assertTrue(File(dir, "build/libs/testProject.jar").isFile)
+    }
+  }
+
+  @Test
+  fun `android java models are reachable from kotlin code`() {
+    val apolloConfiguration = """
+      apollo {
+        generateKotlinModels = false
+      }
+    """.trimIndent()
+    TestUtils.withProject(usesKotlinDsl = false,
+        apolloConfiguration = apolloConfiguration,
+        plugins = listOf(TestUtils.androidApplicationPlugin, TestUtils.kotlinAndroidPlugin, TestUtils.apolloPlugin)) { dir ->
+
+      val source = TestUtils.fixturesDirectory()
+      source.child("kotlin").copyRecursively(dir.child("src", "main", "kotlin"))
+
+      TestUtils.executeTask("assembleDebug", dir)
+
+      Assert.assertTrue(File(dir, "build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/example/DroidDetailsQuery.class").isFile)
+      Assert.assertTrue(File(dir, "build/tmp/kotlin-classes/debug/com/example/Main.class").isFile)
+      Assert.assertTrue(File(dir, "build/outputs/apk/debug/testProject-debug.apk").isFile)
+      Assert.assertTrue(dir.generatedChild("debug/service/com/example/DroidDetailsQuery.java").isFile)
     }
   }
 
@@ -73,7 +119,7 @@ class SourceDirectorySetTests {
       Assert.assertTrue(File(dir, "build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/example/DroidDetailsQuery.class").isFile)
       Assert.assertTrue(File(dir, "build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/example/Main.class").isFile)
       Assert.assertTrue(File(dir, "build/outputs/apk/debug/testProject-debug.apk").isFile)
-      Assert.assertTrue(dir.generatedChild("debug/service0/com/example/DroidDetailsQuery.java").isFile)
+      Assert.assertTrue(dir.generatedChild("debug/service/com/example/DroidDetailsQuery.java").isFile)
     }
   }
 
@@ -95,7 +141,7 @@ class SourceDirectorySetTests {
 
       Assert.assertTrue(File(dir, "build/classes/java/main/com/example/DroidDetailsQuery.class").isFile)
       Assert.assertTrue(File(dir, "build/classes/java/main/com/example/Main.class").isFile)
-      Assert.assertTrue(dir.generatedChild("main/service0/com/example/DroidDetailsQuery.java").isFile)
+      Assert.assertTrue(dir.generatedChild("main/service/com/example/DroidDetailsQuery.java").isFile)
       Assert.assertTrue(File(dir, "build/libs/testProject.jar").isFile)
     }
   }

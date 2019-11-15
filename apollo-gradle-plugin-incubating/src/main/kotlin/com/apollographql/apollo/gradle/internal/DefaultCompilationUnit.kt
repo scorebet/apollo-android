@@ -1,272 +1,134 @@
 package com.apollographql.apollo.gradle.internal
 
-import com.apollographql.apollo.compiler.*
 import com.apollographql.apollo.gradle.api.CompilationUnit
 import com.apollographql.apollo.gradle.api.CompilerParams
 import org.gradle.api.Project
 import org.gradle.api.file.*
-import org.gradle.api.provider.ListProperty
-import org.gradle.api.provider.Property
-import org.gradle.api.provider.Provider
 import java.io.File
+import javax.inject.Inject
 
-class DefaultCompilationUnit(
-    override val serviceName: String,
-    override val variantName: String,
-    override val androidVariant: Any?,
+abstract class DefaultCompilationUnit @Inject constructor(
+    val project: Project,
+    val apolloExtension: DefaultApolloExtension,
+    val apolloVariant: ApolloVariant,
+    val service: DefaultService
+) : CompilationUnit, CompilerParams by project.objects.newInstance(DefaultCompilerParams::class.java) {
 
-    override var compilerParams: CompilerParams,
-
-    private var sourcesLocator: SourcesLocator,
-    private val sourceSetNames: List<String>,
-    private val project: Project
-) : CompilationUnit {
-  sealed class SourcesLocator {
-    class FromService(
-        val schemaPath: Property<String>,
-        val sourceFolder: Property<String>,
-        val rootPackageName: Provider<String>,
-        val exclude: ListProperty<String>
-    ) : SourcesLocator()
-
-    class FromFiles(
-        val schema: File,
-        val sourceFolder: String
-    ) : SourcesLocator()
-  }
-
-  class Sources(
-      val schemaFile: Provider<RegularFile>,
-      val graphqlFiles: FileCollection,
-      val rootFolders: FileCollection,
-      val rootPackageName: Provider<String>
-  )
+  final override val androidVariant = apolloVariant.androidVariant
+  final override val variantName = apolloVariant.name
+  final override val serviceName = service.name
 
   override val name = "${variantName}${serviceName.capitalize()}"
 
-  private var sources: Sources? = null
+  abstract override val outputDir: DirectoryProperty
+  abstract override val transformedQueriesDir: DirectoryProperty
 
-  override val outputDir = project.objects.directoryProperty()
-  override val transformedQueriesDir = project.objects.directoryProperty()
-
-  init {
-    if (!compilerParams.generateKotlinModels.isPresent) {
-      compilerParams.generateKotlinModels.set(false)
-    }
-  }
-
-  fun sources(): Sources {
-    if (sources != null) {
-      return sources!!
-    }
-
-    when (val locator = sourcesLocator) {
-      is SourcesLocator.FromFiles -> {
-        sourcesFromFiles(locator)
-      }
-      is SourcesLocator.FromService -> {
-        sourcesFromService(locator)
-      }
-    }
-    return sources!!
-  }
-
-  override fun setSources(rootFolder: Provider<Directory>) {
-    val schemaFile = project.objects.fileProperty().value {
-      val root = rootFolder.get().asFile
-      val walk = root.walkTopDown()
-      val file = walk.find {
-        it.name.endsWith(".json")
-      }
-      if (file == null) {
-        throw IllegalArgumentException("cannot find a schema in ${root.absolutePath}")
-      }
-      file
-    }
-
-    val graphqlFiles = project.objects.fileCollection()
-    graphqlFiles.setFrom(rootFolder.map {
-      it.asFileTree.matching {
-        it.include("**.graphql", "**.gql")
-      }
-    })
-
-    val rootFolders = project.objects.fileCollection()
-    rootFolders.setFrom(rootFolder)
-
-    val rootPackageName = project.provider { "" }
-
-    sources = Sources(
-        schemaFile = schemaFile,
-        graphqlFiles = graphqlFiles,
-        rootFolders = rootFolders,
-        rootPackageName = rootPackageName
-    )
-  }
-
-  override fun setSources(rootFolders: FileCollection, graphqlFiles: FileCollection, schemaFile: Provider<RegularFile>, rootPackageName: Provider<String>) {
-    sources = Sources(
-        schemaFile = schemaFile,
-        graphqlFiles = graphqlFiles,
-        rootFolders = rootFolders,
-        rootPackageName = rootPackageName
-    )
-  }
-
-  fun sourcesFromService(fromService: SourcesLocator.FromService) {
-    val sourceFolder = fromService.sourceFolder.orElse(".")
-    val rootFolders = project.objects.fileCollection().apply {
-      setFrom({
-        sourceSetNames.map {
-          project.projectDir.child("src", it, "graphql", sourceFolder.get())
-        }
-      })
-    }
-
-    val schemaFile = project.objects.fileProperty().value {
-      if (fromService.schemaPath.isPresent) {
-        val map = findFilesInSourceSets(project, sourceSetNames, fromService.schemaPath.get(), { true })
-        if (map.isEmpty()) {
-          val tried = sourceSetNames.map { project.projectDir.child("src", it, "graphql", fromService.schemaPath.get()).absolutePath }
-          throw IllegalArgumentException("cannot find a schema. Tried:\n${tried.joinToString("\n")}")
-        }
-        map.values.first()
+  private fun resolveSchema(graphqlSourceDirectorySet: SourceDirectorySet): File {
+    if (service.schemaPath.isPresent) {
+      val schemaPath = service.schemaPath.get()
+      if (schemaPath.startsWith(File.separator)) {
+        return project.file(schemaPath)
+      } else if (schemaPath.startsWith("..")) {
+        return project.file("src/main/graphql/$schemaPath").normalize()
       } else {
-        val map = findFilesInSourceSets(project, sourceSetNames, sourceFolder.get(), { it.name.endsWith(".json") })
-        if (map.isEmpty()) {
-          val tried = sourceSetNames.map { project.projectDir.child("src", it, "graphql", sourceFolder.get()).absolutePath }
-          throw IllegalArgumentException("cannot find a schema. Please specify service.schemaPath. Tried:\n${tried.joinToString("\n")}")
+        val all = apolloVariant.sourceSetNames.map {
+          project.file("src/$it/graphql/$schemaPath")
         }
-        map.values.first()
+
+        val candidates = all.filter {
+          it.exists()
+        }
+
+        require(candidates.size <= 1) {
+          "ApolloGraphQL: duplicate(s) schema file(s) found:\n${candidates.map { it.absolutePath }.joinToString("\n")}"
+        }
+        require(candidates.size == 1) {
+          "ApolloGraphQL: cannot find a schema file at $schemaPath. Tried:\n${all.map { it.absolutePath }.joinToString("\n")}"
+        }
+
+        return candidates.first()
       }
+    } else {
+      val candidates = graphqlSourceDirectorySet.srcDirs.flatMap {
+        it.walkTopDown().filter { it.name == "schema.json" }.toList()
+      }
+
+      require(candidates.size <= 1) {
+        multipleSchemaError(candidates)
+      }
+      require(candidates.size == 1) {
+        "ApolloGraphQL: cannot find schema.json. Please specify it explicitely. Looked under:\n" +
+            graphqlSourceDirectorySet.srcDirs.map { it.absolutePath }.joinToString("\n")
+      }
+      return candidates.first()
     }
-
-    val graphqlFiles = project.objects.fileCollection().apply {
-      setFrom({
-        val candidates = findFilesInSourceSets(project, sourceSetNames, sourceFolder.get(), ::isGraphQL).values
-
-        project.files(candidates).asFileTree.matching {
-          it.exclude(fromService.exclude.get())
-        }.files
-      })
-    }
-
-    sources = Sources(
-        schemaFile = schemaFile,
-        graphqlFiles = graphqlFiles,
-        rootFolders = rootFolders,
-        rootPackageName = fromService.rootPackageName
-    )
   }
 
-  fun sourcesFromFiles(fromFiles: SourcesLocator.FromFiles) {
-    val rootFolders = project.objects.fileCollection().apply {
-      setFrom({
-        sourceSetNames.map {
-          project.projectDir.child("src", it, "graphql", fromFiles.sourceFolder)
+  fun setSourcesIfNeeded(graphqlSourceDirectorySet: SourceDirectorySet, schemaFile: RegularFileProperty) {
+    if (graphqlSourceDirectorySet.srcDirs.isEmpty()) {
+      if (schemaFile.isPresent) {
+        graphqlSourceDirectorySet.srcDir(schemaFile.asFile.get().parent)
+      } else {
+        val sourceFolder = service.sourceFolder.orElse(".").get()
+        if (sourceFolder.startsWith(File.separator)) {
+          graphqlSourceDirectorySet.srcDir(sourceFolder)
+        } else if (sourceFolder.startsWith("..")) {
+          graphqlSourceDirectorySet.srcDir(project.file("src/main/graphql/$sourceFolder").normalize())
+        } else {
+          apolloVariant.sourceSetNames.forEach {
+            graphqlSourceDirectorySet.srcDir("src/$it/graphql/$sourceFolder")
+          }
         }
-      })
-    }
-    val rootPackageName = project.provider { fromFiles.sourceFolder.toPackageName() }
-    val schemaFile = project.objects.fileProperty().value { fromFiles.schema }
-    val graphqlFiles = project.objects.fileCollection().apply {
-      setFrom({
-        findFilesInSourceSets(project, sourceSetNames, fromFiles.sourceFolder, ::isGraphQL).values
-      })
+      }
+
+      graphqlSourceDirectorySet.include("**/*.graphql", "**/*.gql")
+      graphqlSourceDirectorySet.exclude(service.exclude.getOrElse(emptyList()))
     }
 
-    sources = Sources(
-        schemaFile = schemaFile,
-        graphqlFiles = graphqlFiles,
-        rootFolders = rootFolders,
-        rootPackageName = rootPackageName
-    )
+    if (!schemaFile.isPresent) {
+      schemaFile.set { resolveSchema(graphqlSourceDirectorySet) }
+    }
+  }
+
+  fun generateKotlinModels(): Boolean {
+    return generateKotlinModels.orElse(service.generateKotlinModels).orElse(apolloExtension.generateKotlinModels).getOrElse(false)
   }
 
   companion object {
+    fun createDefaultCompilationUnit(
+        project: Project,
+        apolloExtension: DefaultApolloExtension,
+        apolloVariant: ApolloVariant,
+        service: DefaultService
+    ): DefaultCompilationUnit {
+      return project.objects.newInstance(DefaultCompilationUnit::class.java,
+          project,
+          apolloExtension,
+          apolloVariant,
+          service
+      ).apply {
+        graphqlSourceDirectorySet.include("**/*.graphql", "**/*.gql")
+      }
+    }
+
     fun fromService(project: Project, apolloExtension: DefaultApolloExtension, apolloVariant: ApolloVariant, service: DefaultService): DefaultCompilationUnit {
-      val compilerParams = service.withFallback(apolloExtension, project.objects)
-
-      val sourcesLocator = SourcesLocator.FromService(
-          rootPackageName = service.rootPackageName,
-          schemaPath = service.schemaPath,
-          sourceFolder = service.sourceFolder,
-          exclude = service.exclude
-      )
-      return DefaultCompilationUnit(
-          project = project,
-          variantName = apolloVariant.name,
-          sourceSetNames = apolloVariant.sourceSetNames,
-          androidVariant = apolloVariant.androidVariant,
-          serviceName = service.name,
-          sourcesLocator = sourcesLocator,
-          compilerParams = compilerParams
-      )
+      return createDefaultCompilationUnit(project, apolloExtension, apolloVariant, service)
     }
 
-    fun fromFiles(project: Project, apolloExtension: DefaultApolloExtension, apolloVariant: ApolloVariant): List<DefaultCompilationUnit> {
-      val sourceSetNames = apolloVariant.sourceSetNames
-      val schemaFiles = findFilesInSourceSets(project, sourceSetNames, ".") {
-        it.name == "schema.json"
+    fun fromFiles(project: Project, apolloExtension: DefaultApolloExtension, apolloVariant: ApolloVariant): DefaultCompilationUnit? {
+      val service = project.objects.newInstance(DefaultService::class.java, project.objects, "service")
+      return createDefaultCompilationUnit(project, apolloExtension, apolloVariant, service)
+    }
+
+    private fun multipleSchemaError(schemaList: List<File>): String {
+      val services = schemaList.joinToString("\n") {
+        """|
+          |  service("${it.parentFile.name}") {
+          |    sourceFolder = "${it.parentFile.normalize().absolutePath}"
+          |  }
+        """.trimMargin()
       }
-
-      return schemaFiles.entries
-          .sortedBy { it.value.canonicalPath } // make sure the order is predictable for tests and in general
-          .mapIndexed { i, entry ->
-            val name = "service$i"
-            val sourceFolder = entry.key.substringBeforeLast("/")
-
-            DefaultCompilationUnit(
-                project = project,
-                variantName = apolloVariant.name,
-                sourceSetNames = apolloVariant.sourceSetNames,
-                androidVariant = apolloVariant.androidVariant,
-                serviceName = name,
-                compilerParams = apolloExtension,
-                sourcesLocator = SourcesLocator.FromFiles(entry.value, sourceFolder)
-            )
-          }
-    }
-
-    fun isGraphQL(file: File): Boolean {
-      return file.name.endsWith(".graphql") || file.name.endsWith(".gql")
-    }
-
-    /**
-     * Finds the files in the given sourceSets taking into account their precedence according to the android plugin order
-     *
-     * Returns a map with the relative path to the path as key and the file as value
-     *
-     * Files coming last will have higher priorities that the first ones.
-     */
-    private fun findFilesInSourceSets(project: Project, sourceSetNames: List<String>, path: String, predicate: (File) -> Boolean): Map<String, File> {
-      val candidates = mutableMapOf<String, File>()
-      sourceSetNames.forEach { sourceSetName ->
-        val root = project.projectDir.child("src", sourceSetName, "graphql", path)
-        val files = root.findFiles(predicate)
-
-        files.forEach {
-          val key = if (root.isFile) {
-            // toRelativeString only works on directories.
-            ""
-          } else {
-            it.toRelativeString(root)
-          }
-
-          // overwrite the previous entry if it was there already
-          // this is ok as Android orders the sourceSetNames from lower to higher priority
-          candidates[key] = it
-        }
-      }
-      return candidates
-    }
-
-    private fun File.findFiles(predicate: (File) -> Boolean): List<File> {
-      return when {
-        isDirectory -> listFiles()?.flatMap { it.findFiles(predicate) } ?: emptyList()
-        isFile && predicate(this) -> listOf(this)
-        else -> emptyList()
-      }
+      return "ApolloGraphQL: By default only one schema.json file is supported.\nPlease use multiple services instead:\napollo {\n$services\n}"
     }
   }
 }

@@ -1,4 +1,4 @@
-package com.apollographql.apollo.gradle.dsltest
+package com.apollographql.apollo.gradle.test
 
 import com.apollographql.apollo.gradle.util.TestUtils
 import org.gradle.testkit.runner.TaskOutcome
@@ -46,8 +46,8 @@ val installTask = tasks.register("installTask", InstallGraphQLFilesTask::class.j
 }
 
 configure<ApolloExtension> {
-  compilationUnits.all {
-    this.setSources(installTask.flatMap { it.outputDir })
+  onCompilationUnits {
+    graphqlSourceDirectorySet.srcDir(installTask.flatMap { it.outputDir })
   }
 }
 """.trimIndent()

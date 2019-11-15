@@ -9,8 +9,8 @@ import com.apollographql.apollo.api.ResponseReader;
 import com.apollographql.apollo.api.ScalarType;
 import com.apollographql.apollo.api.Subscription;
 import com.apollographql.apollo.api.internal.UnmodifiableMapBuilder;
-import com.apollographql.apollo.response.CustomTypeAdapter;
-import com.apollographql.apollo.response.ScalarTypeAdapters;
+import com.apollographql.apollo.api.CustomTypeAdapter;
+import com.apollographql.apollo.api.ScalarTypeAdapters;
 import com.apollographql.apollo.subscription.OnSubscriptionManagerStateChangeListener;
 import com.apollographql.apollo.subscription.OperationClientMessage;
 import com.apollographql.apollo.subscription.OperationServerMessage;
@@ -25,6 +25,7 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -432,6 +433,10 @@ public class SubscriptionManagerTest {
 
     @NotNull @Override public String operationId() {
       return operationId;
+    }
+
+    @NotNull @Override public Response<Data> parse(@NotNull Map<String, Object> response, @NotNull ScalarTypeAdapters scalarTypeAdapters) {
+      throw new UnsupportedOperationException();
     }
   }
 

@@ -1,22 +1,39 @@
 package com.apollographql.apollo.gradle.api
 
-import org.apache.tools.ant.types.resources.FileProvider
-import org.gradle.api.file.*
-import org.gradle.api.provider.ListProperty
-import org.gradle.api.provider.Property
+import org.gradle.api.file.Directory
 import org.gradle.api.provider.Provider
 
-interface CompilationUnit {
+/**
+ * A [CompilationUnit] is a single invocation of the compiler. It is used by
+ * [com.apollographql.apollo.gradle.internal.ApolloGenerateSourcesTask] to generate models.
+ *
+ * It inherits [CompilerParams] so individual parameters can be directly set on the [CompilationUnit]
+ */
+interface CompilationUnit: CompilerParams {
+  /**
+   * The name of the [CompilationUnit]
+   */
   val name: String
+  /**
+   * The name of the [Service] used by this [CompilationUnit]
+   */
   val serviceName: String
+  /**
+   * The name of the variant used by this [CompilationUnit]
+   */
   val variantName: String
+  /**
+   * If on Android, this will contain the Android Variant. It is safe to cast it to [com.android.build.gradle.api.BaseVariant]
+   */
   val androidVariant: Any?
 
-  var compilerParams: CompilerParams
-
+  /**
+   * The directory where the generated models will be written
+   */
   val outputDir: Provider<Directory>
-  val transformedQueriesDir: Provider<Directory>
 
-  fun setSources(rootFolder: Provider<Directory>)
-  fun setSources(rootFolders: FileCollection, graphqlFiles: FileCollection, schemaFile: Provider<RegularFile>, rootPackageName: Provider<String>)
+  /**
+   * The directory where the transformed queries will be written
+   */
+  val transformedQueriesDir: Provider<Directory>
 }

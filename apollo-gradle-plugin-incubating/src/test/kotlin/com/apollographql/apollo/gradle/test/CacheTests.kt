@@ -1,6 +1,6 @@
 package com.apollographql.apollo.gradle.test
 
-import com.apollographql.apollo.compiler.child
+import com.apollographql.apollo.gradle.internal.child
 import com.apollographql.apollo.gradle.util.TestUtils
 import org.gradle.testkit.runner.TaskOutcome
 import org.junit.Assert
@@ -25,17 +25,17 @@ class CacheTests {
       """.trimIndent())
 
       System.out.println("build the project")
-      var result = TestUtils.executeTask("generateMainService0ApolloSources", dir, "--build-cache")
+      var result = TestUtils.executeTask("generateMainServiceApolloSources", dir, "--build-cache")
 
-      Assert.assertEquals(TaskOutcome.SUCCESS, result.task(":generateMainService0ApolloSources")!!.outcome)
+      Assert.assertEquals(TaskOutcome.SUCCESS, result.task(":generateMainServiceApolloSources")!!.outcome)
 
       System.out.println("delete build folder")
       dir.child("build").deleteRecursively()
 
       System.out.println("build from cache")
-      result = TestUtils.executeTask("generateMainService0ApolloSources", dir, "--build-cache")
+      result = TestUtils.executeTask("generateMainServiceApolloSources", dir, "--build-cache")
 
-      Assert.assertEquals(TaskOutcome.FROM_CACHE, result.task(":generateMainService0ApolloSources")!!.outcome)
+      Assert.assertEquals(TaskOutcome.FROM_CACHE, result.task(":generateMainServiceApolloSources")!!.outcome)
     }
   }
 }

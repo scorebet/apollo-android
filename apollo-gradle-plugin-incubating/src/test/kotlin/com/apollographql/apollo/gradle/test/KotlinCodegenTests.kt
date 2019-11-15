@@ -1,6 +1,6 @@
 package com.apollographql.apollo.gradle.test
 
-import com.apollographql.apollo.compiler.child
+import com.apollographql.apollo.gradle.internal.child
 import com.apollographql.apollo.gradle.util.TestUtils
 import com.apollographql.apollo.gradle.util.TestUtils.withProject
 import com.apollographql.apollo.gradle.util.generatedChild
@@ -25,9 +25,9 @@ class KotlinCodegenTests {
 
       TestUtils.executeTask("build", dir)
       Assert.assertTrue(File(dir, "build/classes/kotlin/main/com/example/DroidDetailsQuery.class").isFile)
-      Assert.assertTrue(dir.generatedChild("main/service0/com/example/DroidDetailsQuery.kt").isFile)
-      Assert.assertTrue(dir.generatedChild("main/service0/com/example/type/CustomType.kt").isFile)
-      Assert.assertTrue(dir.generatedChild("main/service0/com/example/fragment/SpeciesInformation.kt").isFile)
+      Assert.assertTrue(dir.generatedChild("main/service/com/example/DroidDetailsQuery.kt").isFile)
+      Assert.assertTrue(dir.generatedChild("main/service/com/example/type/CustomType.kt").isFile)
+      Assert.assertTrue(dir.generatedChild("main/service/com/example/fragment/SpeciesInformation.kt").isFile)
     }
   }
 }

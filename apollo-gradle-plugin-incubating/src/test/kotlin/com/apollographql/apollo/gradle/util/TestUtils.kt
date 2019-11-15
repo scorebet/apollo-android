@@ -1,6 +1,6 @@
 package com.apollographql.apollo.gradle.util
 
-import com.apollographql.apollo.compiler.child
+import com.apollographql.apollo.gradle.internal.child
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.GradleRunner
 import org.hamcrest.CoreMatchers.containsString
@@ -19,15 +19,25 @@ object TestUtils {
   val apolloPlugin = Plugin(id = "com.apollographql.apollo", artifact = "apollo.pluginIncubating")
   val apolloPluginAndroid = Plugin(id = "com.apollographql.android", artifact = "apollo.pluginIncubating")
 
+
+  fun withDirectory(block: (File) -> Unit) {
+    val dest = File(System.getProperty("user.dir")).child("build", "testProject")
+    dest.deleteRecursively()
+
+    block(dest)
+
+    // It's ok to not delete the directory as it will be deleted before next test
+    // During developement, it's easy to keep the testProject around to investigate if something goes wrong
+    // dest.deleteRecursively()
+  }
+
   fun withProject(usesKotlinDsl: Boolean,
                   plugins: List<Plugin>,
                   apolloConfiguration: String,
                   isFlavored: Boolean = false,
-                  block: (File) -> Unit) {
+                  block: (File) -> Unit) = withDirectory {
     val source = fixturesDirectory()
-    val dest = File(System.getProperty("user.dir")).child("build", "testProject")
-
-    dest.deleteRecursively()
+    val dest = it
 
     source.child("starwars").copyRecursively(target = dest.child("src", "main", "graphql", "com", "example"))
     source.child("gradle", "settings.gradle").copyTo(target = dest.child("settings.gradle"))
@@ -119,8 +129,15 @@ object TestUtils {
     }
 
     block(dest)
+  }
 
-    dest.deleteRecursively()
+  fun withGeneratedAccessorsProject(apolloConfiguration: String,  block: (File) -> Unit) = withDirectory {dir->
+    fixturesDirectory().child("gradle", "settings.gradle.kts").copyTo(dir.child("settings.gradle.kts"))
+    fixturesDirectory().child("gradle", "build.gradle.kts").copyTo(dir.child("build.gradle.kts"))
+
+    dir.child("build.gradle.kts").appendText(apolloConfiguration)
+
+    block(dir)
   }
 
   /**

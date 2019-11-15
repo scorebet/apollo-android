@@ -23,12 +23,12 @@ class AndroidTests {
       assertEquals(TaskOutcome.SUCCESS, result.task(":build")!!.outcome)
 
       // Java classes generated successfully
-      assertTrue(dir.generatedChild("debug/service0/com/example/DroidDetailsQuery.java").isFile)
-      assertTrue(dir.generatedChild("debug/service0/com/example/FilmsQuery.java").isFile)
-      assertTrue(dir.generatedChild("debug/service0/com/example/fragment/SpeciesInformation.java").isFile)
-      assertTrue(dir.generatedChild("release/service0/com/example/DroidDetailsQuery.java").isFile)
-      assertTrue(dir.generatedChild("release/service0/com/example/FilmsQuery.java").isFile)
-      assertTrue(dir.generatedChild("release/service0/com/example/fragment/SpeciesInformation.java").isFile)
+      assertTrue(dir.generatedChild("debug/service/com/example/DroidDetailsQuery.java").isFile)
+      assertTrue(dir.generatedChild("debug/service/com/example/FilmsQuery.java").isFile)
+      assertTrue(dir.generatedChild("debug/service/com/example/fragment/SpeciesInformation.java").isFile)
+      assertTrue(dir.generatedChild("release/service/com/example/DroidDetailsQuery.java").isFile)
+      assertTrue(dir.generatedChild("release/service/com/example/FilmsQuery.java").isFile)
+      assertTrue(dir.generatedChild("release/service/com/example/fragment/SpeciesInformation.java").isFile)
     }
   }
 
@@ -42,8 +42,8 @@ class AndroidTests {
       assertEquals(TaskOutcome.SUCCESS, result.task(":generateDebugApolloSources")!!.outcome)
 
       // Java classes generated successfully
-      assertTrue(dir.generatedChild("debug/service0/com/example/DroidDetailsQuery.java").isFile)
-      assertFalse(dir.generatedChild("release/service0/com/example/DroidDetailsQuery.java").exists())
+      assertTrue(dir.generatedChild("debug/service/com/example/DroidDetailsQuery.java").isFile)
+      assertFalse(dir.generatedChild("release/service/com/example/DroidDetailsQuery.java").exists())
     }
   }
 
@@ -57,12 +57,15 @@ class AndroidTests {
       File(dir, "src/main/graphql/com/example/DroidDetails.graphql").copyTo(debugFile)
       debugFile.replaceInText("c3BlY2llczoy", "speciesIdForDebug")
 
-      val result = TestUtils.executeTask("generateDebugApolloSources", dir)
+      var exception: Exception? = null
+      try {
+        TestUtils.executeTask("generateDebugApolloSources", dir)
+      } catch (e: UnexpectedBuildFailure) {
+        exception = e
+        assertThat(e.message, containsString("duplicate(s) graphql file(s) found"))
+      }
 
-      assertEquals(TaskOutcome.SUCCESS, result.task(":generateDebugApolloSources")!!.outcome)
-
-      // Java classes generated successfully
-      assertThat(dir.generatedChild("debug/service0/com/example/DroidDetailsQuery.java").readText(), containsString("speciesIdForDebug"))
+      assertNotNull(exception)
     }
   }
 
@@ -76,10 +79,10 @@ class AndroidTests {
 
       TestUtils.executeTask("build", dir)
 
-      assertTrue(dir.generatedChild("freeDebug/service0/com/example/DroidDetailsQuery.java").isFile)
-      assertTrue(dir.generatedChild("freeRelease/service0/com/example/DroidDetailsQuery.java").isFile)
-      assertTrue(dir.generatedChild("paidDebug/service0/com/example/DroidDetailsQuery.java").isFile)
-      assertTrue(dir.generatedChild("paidRelease/service0/com/example/DroidDetailsQuery.java").isFile)
+      assertTrue(dir.generatedChild("freeDebug/service/com/example/DroidDetailsQuery.java").isFile)
+      assertTrue(dir.generatedChild("freeRelease/service/com/example/DroidDetailsQuery.java").isFile)
+      assertTrue(dir.generatedChild("paidDebug/service/com/example/DroidDetailsQuery.java").isFile)
+      assertTrue(dir.generatedChild("paidRelease/service/com/example/DroidDetailsQuery.java").isFile)
     }
   }
 
@@ -93,6 +96,12 @@ class AndroidTests {
       val freeDebugDir = File(dir, "src/freeDebug/graphql/com/example/")
       freeDebugDir.mkdirs()
       File(freeDebugDir, "schema.json").writeText("This is an invalid schema")
+
+      val paidDebugDir = File(dir, "src/paidDebug/graphql/com/example/")
+      paidDebugDir.mkdirs()
+      File(dir, "src/main/graphql/com/example/schema.json").copyTo(File(paidDebugDir, "schema.json"))
+
+      File(dir, "src/main/graphql/com/example/schema.json").delete()
 
       var exception: Exception? = null
       try {
@@ -119,12 +128,12 @@ class AndroidTests {
       assertEquals(TaskOutcome.SUCCESS, result.task(":build")!!.outcome)
 
       // Java classes generated successfully
-      assertTrue(dir.generatedChild("debug/service0/com/example/DroidDetailsQuery.java").isFile)
-      assertTrue(dir.generatedChild("debug/service0/com/example/FilmsQuery.java").isFile)
-      assertTrue(dir.generatedChild("debug/service0/com/example/fragment/SpeciesInformation.java").isFile)
-      assertTrue(dir.generatedChild("release/service0/com/example/DroidDetailsQuery.java").isFile)
-      assertTrue(dir.generatedChild("release/service0/com/example/FilmsQuery.java").isFile)
-      assertTrue(dir.generatedChild("release/service0/com/example/fragment/SpeciesInformation.java").isFile)
+      assertTrue(dir.generatedChild("debug/service/com/example/DroidDetailsQuery.java").isFile)
+      assertTrue(dir.generatedChild("debug/service/com/example/FilmsQuery.java").isFile)
+      assertTrue(dir.generatedChild("debug/service/com/example/fragment/SpeciesInformation.java").isFile)
+      assertTrue(dir.generatedChild("release/service/com/example/DroidDetailsQuery.java").isFile)
+      assertTrue(dir.generatedChild("release/service/com/example/FilmsQuery.java").isFile)
+      assertTrue(dir.generatedChild("release/service/com/example/fragment/SpeciesInformation.java").isFile)
     }
   }
 

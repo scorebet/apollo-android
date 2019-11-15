@@ -7,7 +7,9 @@ import org.gradle.api.Action
 import org.gradle.api.model.ObjectFactory
 import javax.inject.Inject
 
-open class DefaultService @Inject constructor(val objects: ObjectFactory, val name: String) : CompilerParams by DefaultCompilerParams(objects), Service {
+open class DefaultService @Inject constructor(val objects: ObjectFactory, val name: String)
+  : CompilerParams by objects.newInstance(DefaultCompilerParams::class.java), Service {
+
   override val schemaPath = objects.property(String::class.java)
   override fun schemaPath(schemaPath: String) {
     this.schemaPath.set(schemaPath)
@@ -16,11 +18,6 @@ open class DefaultService @Inject constructor(val objects: ObjectFactory, val na
   override val sourceFolder = objects.property(String::class.java)
   override fun sourceFolder(sourceFolder: String) {
     this.sourceFolder.set(sourceFolder)
-  }
-
-  override val rootPackageName = objects.property(String::class.java)
-  override fun rootPackageName(rootPackageName: String) {
-    this.rootPackageName.set(rootPackageName)
   }
 
   override val exclude = objects.listProperty(String::class.java)
