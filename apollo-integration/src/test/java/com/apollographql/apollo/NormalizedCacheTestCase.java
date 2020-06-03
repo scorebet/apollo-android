@@ -24,18 +24,17 @@ import com.apollographql.apollo.integration.normalizer.StarshipByIdQuery;
 import com.apollographql.apollo.integration.normalizer.fragment.HeroWithFriendsFragment;
 import com.apollographql.apollo.integration.normalizer.fragment.HumanWithIdFragment;
 import com.apollographql.apollo.integration.normalizer.type.Episode;
-
+import io.reactivex.functions.Predicate;
+import kotlin.reflect.KClass;
+import okhttp3.Dispatcher;
+import okhttp3.OkHttpClient;
+import okhttp3.mockwebserver.MockWebServer;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-
-import io.reactivex.functions.Predicate;
-import okhttp3.Dispatcher;
-import okhttp3.OkHttpClient;
-import okhttp3.mockwebserver.MockWebServer;
 
 import static com.apollographql.apollo.fetcher.ApolloResponseFetchers.CACHE_FIRST;
 import static com.apollographql.apollo.fetcher.ApolloResponseFetchers.CACHE_ONLY;
@@ -404,7 +403,7 @@ public class NormalizedCacheTestCase {
         }
     );
 
-    HeroWithFriendsFragment heroWithFriendsFragment = apolloClient.apolloStore().read(
+    HeroWithFriendsFragment heroWithFriendsFragment = apolloClient.getApolloStore().read(
         new HeroWithFriendsFragment.Mapper(), CacheKey.from("2001"), Operation.EMPTY_VARIABLES).execute();
 
     assertThat(heroWithFriendsFragment.id()).isEqualTo("2001");
@@ -417,17 +416,17 @@ public class NormalizedCacheTestCase {
     assertThat(heroWithFriendsFragment.friends().get(2).fragments().humanWithIdFragment().id()).isEqualTo("1003");
     assertThat(heroWithFriendsFragment.friends().get(2).fragments().humanWithIdFragment().name()).isEqualTo("Leia Organa");
 
-    HumanWithIdFragment fragment = apolloClient.apolloStore().read(new HumanWithIdFragment.Mapper(),
+    HumanWithIdFragment fragment = apolloClient.getApolloStore().read(new HumanWithIdFragment.Mapper(),
         CacheKey.from("1000"), Operation.EMPTY_VARIABLES).execute();
     assertThat(fragment.id()).isEqualTo("1000");
     assertThat(fragment.name()).isEqualTo("Luke Skywalker");
 
-    fragment = apolloClient.apolloStore().read(new HumanWithIdFragment.Mapper(), CacheKey.from("1002"),
+    fragment = apolloClient.getApolloStore().read(new HumanWithIdFragment.Mapper(), CacheKey.from("1002"),
         Operation.EMPTY_VARIABLES).execute();
     assertThat(fragment.id()).isEqualTo("1002");
     assertThat(fragment.name()).isEqualTo("Han Solo");
 
-    fragment = apolloClient.apolloStore().read(new HumanWithIdFragment.Mapper(), CacheKey.from("1003"),
+    fragment = apolloClient.getApolloStore().read(new HumanWithIdFragment.Mapper(), CacheKey.from("1003"),
         Operation.EMPTY_VARIABLES).execute();
     assertThat(fragment.id()).isEqualTo("1003");
     assertThat(fragment.name()).isEqualTo("Leia Organa");
@@ -510,7 +509,7 @@ public class NormalizedCacheTestCase {
     );
 
     // test remove root query object
-    assertThat(apolloClient.apolloStore().remove(CacheKey.from("2001")).execute()).isTrue();
+    assertThat(apolloClient.getApolloStore().remove(CacheKey.from("2001")).execute()).isTrue();
 
     Utils.INSTANCE.assertResponse(
         apolloClient.query(new HeroAndFriendsNamesWithIDsQuery(Input.fromNullable(Episode.NEWHOPE)))
@@ -546,7 +545,7 @@ public class NormalizedCacheTestCase {
     );
 
     // test remove object from the list
-    assertThat(apolloClient.apolloStore().remove(CacheKey.from("1002")).execute()).isTrue();
+    assertThat(apolloClient.getApolloStore().remove(CacheKey.from("1002")).execute()).isTrue();
 
     Utils.INSTANCE.assertResponse(
         apolloClient.query(new HeroAndFriendsNamesWithIDsQuery(Input.fromNullable(Episode.NEWHOPE)))
@@ -630,7 +629,7 @@ public class NormalizedCacheTestCase {
         }
     );
 
-    assertThat(apolloClient.apolloStore().remove(asList(CacheKey.from("1002"), CacheKey.from("1000")))
+    assertThat(apolloClient.getApolloStore().remove(asList(CacheKey.from("1002"), CacheKey.from("1000")))
         .execute()).isEqualTo(2);
 
     Utils.INSTANCE.assertResponse(
@@ -797,7 +796,7 @@ public class NormalizedCacheTestCase {
         }
     );
 
-    Map<Class, Map<String, Record>> dump = apolloClient.apolloStore().normalizedCache().dump();
+    Map<KClass<?>, Map<String, Record>> dump = apolloClient.getApolloStore().normalizedCache().dump();
     assertThat(NormalizedCache.prettifyDump(dump)).isEqualTo("OptimisticNormalizedCache {}\n" +
         "LruNormalizedCache {\n" +
         "  \"1002\" : {\n" +
@@ -883,7 +882,7 @@ public class NormalizedCacheTestCase {
     );
 
     // test remove root query object
-    assertThat(apolloClient.apolloStore().remove(CacheKey.from("2001"), true).execute()).isTrue();
+    assertThat(apolloClient.getApolloStore().remove(CacheKey.from("2001"), true).execute()).isTrue();
 
     Utils.INSTANCE.assertResponse(
         apolloClient.query(new HeroAndFriendsNamesWithIDsQuery(Input.fromNullable(Episode.NEWHOPE)))
@@ -929,7 +928,7 @@ public class NormalizedCacheTestCase {
         }
     );
 
-    assertThat(NormalizedCache.prettifyDump(apolloClient.apolloStore().normalizedCache().dump())).isEqualTo("" +
+    assertThat(NormalizedCache.prettifyDump(apolloClient.getApolloStore().normalizedCache().dump())).isEqualTo("" +
         "OptimisticNormalizedCache {}\n" +
         "LruNormalizedCache {\n" +
         "  \"QUERY_ROOT\" : {\n" +

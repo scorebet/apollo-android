@@ -2,16 +2,33 @@ package com.apollographql.apollo.compiler.codegen.kotlin
 
 import com.apollographql.apollo.api.Input
 import com.apollographql.apollo.api.ResponseField
-import com.apollographql.apollo.api.ResponseFieldMarshaller
-import com.apollographql.apollo.api.ResponseReader
+import com.apollographql.apollo.api.internal.ResponseFieldMapper
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller
+import com.apollographql.apollo.api.internal.ResponseReader
 import com.apollographql.apollo.compiler.applyIf
 import com.apollographql.apollo.compiler.ast.FieldType
 import com.apollographql.apollo.compiler.ast.InputType
 import com.apollographql.apollo.compiler.ast.ObjectType
 import com.apollographql.apollo.compiler.ast.TypeRef
-import com.apollographql.apollo.compiler.ir.ScalarType
-import com.squareup.kotlinpoet.*
+import com.squareup.kotlinpoet.AnnotationSpec
+import com.squareup.kotlinpoet.BOOLEAN
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.CodeBlock
+import com.squareup.kotlinpoet.DOUBLE
+import com.squareup.kotlinpoet.FLOAT
+import com.squareup.kotlinpoet.FunSpec
+import com.squareup.kotlinpoet.INT
+import com.squareup.kotlinpoet.KModifier
+import com.squareup.kotlinpoet.LONG
+import com.squareup.kotlinpoet.ParameterSpec
+import com.squareup.kotlinpoet.ParameterizedTypeName
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import com.squareup.kotlinpoet.PropertySpec
+import com.squareup.kotlinpoet.TypeName
+import com.squareup.kotlinpoet.TypeSpec
+import com.squareup.kotlinpoet.asClassName
+import com.squareup.kotlinpoet.asTypeName
+import com.squareup.kotlinpoet.joinToCode
 
 internal object KotlinCodeGen {
 
@@ -36,21 +53,12 @@ internal object KotlinCodeGen {
       FieldType.Scalar.Int -> INT
       FieldType.Scalar.Boolean -> BOOLEAN
       FieldType.Scalar.Float -> DOUBLE
-      is FieldType.Scalar.Enum -> ClassName(
-          packageName = typeRef.packageName,
-          simpleName = typeRef.name
-      )
+      is FieldType.Scalar.Enum -> ClassName(typeRef.packageName, typeRef.name)
       is FieldType.Scalar.Custom -> ClassName.bestGuess(mappedType)
     }
     is FieldType.Fragments -> ClassName.bestGuess(name)
-    is FieldType.Object -> ClassName(
-        packageName = typeRef.packageName,
-        simpleName = typeRef.name
-    )
-    is FieldType.InlineFragment -> ClassName(
-        packageName = typeRef.packageName,
-        simpleName = typeRef.name
-    )
+    is FieldType.Object -> ClassName(typeRef.packageName, typeRef.name)
+    is FieldType.Fragment -> ClassName(typeRef.packageName, typeRef.name)
     is FieldType.Array -> List::class.asClassName().parameterizedBy(rawType.asTypeName(optional = isOptional))
   }.let {
     if (optional) it.copy(nullable = true) else it.copy(nullable = false)
@@ -74,9 +82,7 @@ internal object KotlinCodeGen {
     return PropertySpec
         .builder(
             name = "RESPONSE_FIELDS",
-            type = Array<ResponseField>::
-            class.asClassName().parameterizedBy(ResponseField::
-            class.asClassName()),
+            type = Array<ResponseField>::class.asClassName().parameterizedBy(ResponseField::class.asClassName()),
             modifiers = *arrayOf(KModifier.PRIVATE)
         )
         .initializer(initializer)
@@ -85,7 +91,7 @@ internal object KotlinCodeGen {
 
   private val ObjectType.Field.responseFieldInitializerCode: CodeBlock
     get() {
-      val builder = CodeBlock.builder().add("%T.%L", ResponseField::class, when (type) {
+      val factoryMethod = when (type) {
         is FieldType.Scalar -> when (type) {
           is FieldType.Scalar.String -> "forString"
           is FieldType.Scalar.Int -> "forInt"
@@ -94,18 +100,19 @@ internal object KotlinCodeGen {
           is FieldType.Scalar.Enum -> "forEnum"
           is FieldType.Scalar.Custom -> "forCustomType"
         }
-        is FieldType.Fragments -> "forString"
         is FieldType.Object -> "forObject"
-        is FieldType.InlineFragment -> "forInlineFragment"
+        is FieldType.Fragment -> "forFragment"
+        is FieldType.Fragments -> "forString"
         is FieldType.Array -> "forList"
-      })
+      }
 
+      val builder = CodeBlock.builder().add("%T.%L", ResponseField::class, factoryMethod)
       when {
         type is FieldType.Scalar && type is FieldType.Scalar.Custom -> {
           builder.add("(%S, %S, %L, %L, %T.%L, %L)", responseName, schemaName, arguments.takeIf { it.isNotEmpty() }.toCode(), isOptional,
               type.customEnumType.asTypeName(), type.customEnumConst, conditionsListCode(conditions))
         }
-        type is FieldType.InlineFragment -> {
+        type is FieldType.Fragment -> {
           builder.add("(%S, %S, %L)", responseName, schemaName, conditionsListCode(conditions))
         }
         else -> {
@@ -113,26 +120,38 @@ internal object KotlinCodeGen {
               conditionsListCode(conditions))
         }
       }
-
       return builder.build()
     }
 
-  private fun conditionsListCode(conditions: List<ObjectType.Field.Condition>): CodeBlock? {
-    return conditions.takeIf { conditions.isNotEmpty() }
-        ?.map { condition ->
+  private fun conditionsListCode(conditions: List<ObjectType.Field.Condition>): CodeBlock {
+    return conditions
+        .map { condition ->
           when (condition) {
-            is ObjectType.Field.Condition.Type -> CodeBlock.of("%S", condition.type)
+            is ObjectType.Field.Condition.Type -> {
+              val possibleTypes = condition.types.map { CodeBlock.of("%S", it) }.joinToCode(separator = ", ")
+              CodeBlock.of("%T.typeCondition(arrayOf(%L))", ResponseField.Condition::class, possibleTypes)
+            }
             is ObjectType.Field.Condition.Directive -> CodeBlock.of("%T.booleanCondition(%S, %L)",
                 ResponseField.Condition::class, condition.variableName, condition.inverted)
           }
         }
-        ?.joinToCode(prefix = "listOf(", separator = ", ", suffix = ")")
+        .joinToCode(separator = ",\n")
+        .let {
+          if (conditions.isEmpty()) {
+            CodeBlock.of("null")
+          } else {
+            CodeBlock.builder()
+                .add("listOf(\n")
+                .indent().add(it).unindent()
+                .add("\n)")
+                .build()
+          }
+        }
   }
 
   fun List<ObjectType.Field>.toMapperFun(responseTypeName: TypeName): FunSpec {
     val readFieldsCode = mapIndexed { index, field ->
       CodeBlock.of("val %L = %L", field.name, field.type.readCode(
-          reader = "reader",
           field = "RESPONSE_FIELDS[$index]",
           optional = field.isOptional
       ))
@@ -144,195 +163,216 @@ internal object KotlinCodeGen {
         .addModifiers(KModifier.OPERATOR)
         .addParameter(ParameterSpec.builder("reader", ResponseReader::class).build())
         .returns(responseTypeName)
-        .addCode(CodeBlock.builder()
+        .addCode(CodeBlock
+            .builder()
+            .beginControlFlow("return reader.run")
             .add(readFieldsCode)
-            .addStatement("return %T(", responseTypeName)
+            .addStatement("%T(", responseTypeName)
             .indent()
             .add(mapFieldsCode)
             .unindent()
             .addStatement(")")
+            .endControlFlow()
             .build()
         )
         .build()
   }
 
-  private fun FieldType.readCode(reader: String, field: String, optional: Boolean): CodeBlock {
+  fun TypeName.createMapperFun(): FunSpec {
+    return FunSpec.builder("Mapper")
+        .addAnnotation(
+            AnnotationSpec.builder(Suppress::class)
+                .addMember("%S", "FunctionName")
+                .build()
+        )
+        .returns(ResponseFieldMapper::class.asClassName().parameterizedBy(this))
+        .addStatement("return %T·{ invoke(it) }", ResponseFieldMapper::class)
+        .build()
+  }
+
+  private fun FieldType.readCode(field: String, optional: Boolean): CodeBlock {
+    val notNullOperator = "!!".takeIf { !optional } ?: ""
     return when (this) {
       is FieldType.Scalar -> when (this) {
-        is FieldType.Scalar.String -> CodeBlock.of("%L.readString(%L)", reader, field)
-        is FieldType.Scalar.Int -> CodeBlock.of("%L.readInt(%L)", reader, field)
-        is FieldType.Scalar.Boolean -> CodeBlock.of("%L.readBoolean(%L)", reader, field)
-        is FieldType.Scalar.Float -> CodeBlock.of("%L.readDouble(%L)", reader, field)
+        is FieldType.Scalar.String -> CodeBlock.of("readString(%L)%L", field, notNullOperator)
+        is FieldType.Scalar.Int -> CodeBlock.of("readInt(%L)%L", field, notNullOperator)
+        is FieldType.Scalar.Boolean -> CodeBlock.of("readBoolean(%L)%L", field, notNullOperator)
+        is FieldType.Scalar.Float -> CodeBlock.of("readDouble(%L)%L", field, notNullOperator)
         is FieldType.Scalar.Enum -> if (optional) {
-          CodeBlock.of("%L.readString(%L)?.let{ %T.safeValueOf(it) }", reader, field, typeRef.asTypeName())
+          CodeBlock.of("readString(%L)?.let·{ %T.safeValueOf(it) }", field, typeRef.asTypeName())
         } else {
-          CodeBlock.of("%T.safeValueOf(%L.readString(%L))", typeRef.asTypeName(), reader, field)
+          CodeBlock.of("%T.safeValueOf(readString(%L)!!)", typeRef.asTypeName(), field)
         }
         is FieldType.Scalar.Custom -> if (field.isNotEmpty()) {
-          CodeBlock.of("%L.readCustomType<%T>(%L as %T)", reader, ClassName.bestGuess(mappedType),
-              field, ResponseField.CustomTypeField::class)
+          CodeBlock.of("readCustomType<%T>(%L as %T)%L", ClassName.bestGuess(mappedType), field, ResponseField.CustomTypeField::class,
+              notNullOperator)
         } else {
-          CodeBlock.of("%L.readCustomType<%T>(%T.%L)", reader, ClassName.bestGuess(mappedType),
-              customEnumType.asTypeName(), customEnumConst)
+          CodeBlock.of("readCustomType<%T>(%T.%L)%L", ClassName.bestGuess(mappedType), customEnumType.asTypeName(), customEnumConst,
+              notNullOperator)
         }
       }
       is FieldType.Object -> {
         val fieldCode = field.takeIf { it.isNotEmpty() }?.let { CodeBlock.of("(%L)", it) } ?: CodeBlock.of("")
         CodeBlock.builder()
-            .add("%L.readObject<%T>%L { reader ->\n", reader, typeRef.asTypeName(), fieldCode)
+            .addStatement("readObject<%T>%L·{ reader ->", typeRef.asTypeName(), fieldCode)
             .indent()
             .addStatement("%T(reader)", typeRef.asTypeName())
             .unindent()
-            .add("}\n")
+            .add("}%L", notNullOperator)
             .build()
       }
       is FieldType.Array -> {
         CodeBlock.builder()
-            .apply {
-              if (field.isBlank()) {
-                add("%L.readList<%T> {\n", reader, rawType.asTypeName())
+            .addStatement("readList<%T>(%L)·{ reader ->", rawType.asTypeName(), field)
+            .indent()
+            .add(rawType.readListItemCode())
+            .unindent()
+            .add("\n}%L", notNullOperator)
+            .applyIf(!isOptional) {
+              if (optional) {
+                add("?.map·{ it!! }")
               } else {
-                add("%L.readList<%T>(%L) {\n", reader, rawType.asTypeName(), field)
+                add(".map·{ it!! }")
               }
             }
-            .indent()
-            .add(rawType.readCode(reader = "it", field = "", optional = isOptional))
-            .add("\n")
-            .unindent()
-            .add("}")
             .build()
       }
       is FieldType.Fragments -> {
-        CodeBlock.builder()
-            .beginControlFlow("%L.readConditional(%L) { conditionalType, reader ->", reader, field)
-            .add(
-                fields.map { field ->
-                  if (field.isOptional) {
-                    CodeBlock.of("val %L = if (%T.POSSIBLE_TYPES.contains(conditionalType)) %T(reader) else null",
-                        field.name, field.type.asTypeName(), field.type.asTypeName())
-                  } else {
-                    CodeBlock.of("val %L = %T(reader)", field.name, field.type.asTypeName())
-                  }
-                }.joinToCode(separator = "\n", suffix = "\n")
-            )
-            .addStatement("%L(", name)
-            .indent()
-            .add(
-                fields.map { field ->
-                  if (field.isOptional) {
-                    CodeBlock.of("%L = %L", field.name, field.name)
-                  } else {
-                    CodeBlock.of("%L = %L", field.name, field.name)
-                  }
-
-                }.joinToCode(separator = ",\n", suffix = "\n")
-            )
-            .unindent()
-            .addStatement(")")
-            .endControlFlow()
-            .build()
+        CodeBlock.of("%L(reader)", name)
       }
-      is FieldType.InlineFragment -> {
-        val conditionalBranches = fragmentRefs.map { typeRef ->
-          CodeBlock.of("in %T.POSSIBLE_TYPES -> %T(reader)", typeRef.asTypeName(), typeRef.asTypeName())
-        }
+      is FieldType.Fragment -> {
         CodeBlock.builder()
-            .beginControlFlow("%L.readConditional(%L) { conditionalType, reader ->", reader, field)
-            .beginControlFlow("when(conditionalType)")
-            .add(conditionalBranches.joinToCode("\n"))
-            .addStatement("")
-            .addStatement("else -> null")
-            .endControlFlow()
-            .endControlFlow()
+            .addStatement("readFragment<%T>(%L)·{ reader ->", typeRef.asTypeName(), field)
+            .indent()
+            .addStatement("%T(reader)", typeRef.asTypeName())
+            .unindent()
+            .add("}%L", notNullOperator)
             .build()
       }
     }
   }
 
-  fun marshallerFunSpec(fields: List<ObjectType.Field>, override: Boolean = false): FunSpec {
-    val writeFieldsCode = fields.mapIndexed { index, field ->
-      field.writeCode(field = "RESPONSE_FIELDS[$index]")
-    }.joinToCode(separator = "\n", suffix = "\n")
+  private fun FieldType.readListItemCode(): CodeBlock {
+    return when (this) {
+      is FieldType.Scalar -> when (this) {
+        is FieldType.Scalar.String -> CodeBlock.of("reader.readString()")
+        is FieldType.Scalar.Int -> CodeBlock.of("reader.readInt()")
+        is FieldType.Scalar.Boolean -> CodeBlock.of("reader.readBoolean()")
+        is FieldType.Scalar.Float -> CodeBlock.of("reader.readDouble()")
+        is FieldType.Scalar.Enum -> CodeBlock.of("%T.safeValueOf(reader.readString())", typeRef.asTypeName())
+        is FieldType.Scalar.Custom -> {
+          CodeBlock.of("reader.readCustomType<%T>(%T.%L)", ClassName.bestGuess(mappedType), customEnumType.asTypeName(), customEnumConst)
+        }
+      }
+      is FieldType.Object -> {
+        CodeBlock.builder()
+            .addStatement("reader.readObject<%T>·{ reader ->", typeRef.asTypeName())
+            .indent()
+            .addStatement("%T(reader)", typeRef.asTypeName())
+            .unindent()
+            .add("}")
+            .build()
+      }
+      is FieldType.Array -> {
+        CodeBlock.builder()
+            .addStatement("reader.readList<%T>·{ reader ->", rawType.asTypeName())
+            .indent()
+            .add(rawType.readListItemCode())
+            .unindent()
+            .add("\n}")
+            .applyIf(!isOptional) { add(".map·{ it!! }") }
+            .build()
+      }
+      is FieldType.Fragments -> CodeBlock.of("%L(reader)", name)
+      else -> throw IllegalArgumentException("Unsupported list item type $this")
+    }
+  }
+
+  fun List<ObjectType.Field>.marshallerFunSpec(override: Boolean = false, thisRef: String): FunSpec {
+    val writeFieldsCode = mapIndexed { index, field ->
+      field.writeCode(field = "RESPONSE_FIELDS[$index]", thisRef = thisRef)
+    }.joinToCode(separator = "")
     return FunSpec.builder("marshaller")
         .applyIf(override) { addModifiers(KModifier.OVERRIDE) }
         .returns(ResponseFieldMarshaller::class)
-        .beginControlFlow("return %T", ResponseFieldMarshaller::class)
+        .beginControlFlow("return %T.invoke·{ writer ->", ResponseFieldMarshaller::class)
         .addCode(writeFieldsCode)
         .endControlFlow()
         .build()
   }
 
-  private fun ObjectType.Field.writeCode(field: String): CodeBlock {
+  private fun ObjectType.Field.writeCode(field: String, thisRef: String): CodeBlock {
     return when (type) {
       is FieldType.Scalar -> when (type) {
-        is FieldType.Scalar.String -> CodeBlock.of("it.writeString(%L, %L)", field, name)
-        is FieldType.Scalar.Int -> CodeBlock.of("it.writeInt(%L, %L)", field, name)
-        is FieldType.Scalar.Boolean -> CodeBlock.of("it.writeBoolean(%L, %L)", field, name)
-        is FieldType.Scalar.Float -> CodeBlock.of("it.writeDouble(%L, %L)", field, name)
+        is FieldType.Scalar.String -> CodeBlock.of("writer.writeString(%L, this@%L.%L)\n", field, thisRef, name)
+        is FieldType.Scalar.Int -> CodeBlock.of("writer.writeInt(%L, this@%L.%L)\n", field, thisRef, name)
+        is FieldType.Scalar.Boolean -> CodeBlock.of("writer.writeBoolean(%L, this@%L.%L)\n", field, thisRef, name)
+        is FieldType.Scalar.Float -> CodeBlock.of("writer.writeDouble(%L, this@%L.%L)\n", field, thisRef, name)
         is FieldType.Scalar.Enum -> {
           if (isOptional) {
-            CodeBlock.of("it.writeString(%L, %L?.rawValue)", field, name)
+            CodeBlock.of("writer.writeString(%L, this@%L.%L?.rawValue)\n", field, thisRef, name)
           } else {
-            CodeBlock.of("it.writeString(%L, %L.rawValue)", field, name)
+            CodeBlock.of("writer.writeString(%L, this@%L.%L.rawValue)\n", field, thisRef, name)
           }
         }
-        is FieldType.Scalar.Custom -> CodeBlock.of("it.writeCustom(%L as %T, %L)", field,
-            ResponseField.CustomTypeField::class, name)
+        is FieldType.Scalar.Custom -> CodeBlock.of("writer.writeCustom(%L as %T, this@%L.%L)\n", field,
+            ResponseField.CustomTypeField::class, thisRef, name)
       }
-      is FieldType.Object, is FieldType.InlineFragment -> {
+      is FieldType.Object -> {
         if (isOptional) {
-          CodeBlock.of("it.writeObject(%L, %L?.marshaller())", field, name)
+          CodeBlock.of("writer.writeObject(%L, this@%L.%L?.marshaller())\n", field, thisRef, name)
         } else {
-          CodeBlock.of("it.writeObject(%L, %L.marshaller())", field, name)
+          CodeBlock.of("writer.writeObject(%L, this@%L.%L.marshaller())\n", field, thisRef, name)
+        }
+      }
+      is FieldType.Fragment -> {
+        if (isOptional) {
+          CodeBlock.of("writer.writeFragment(this@%L.%L?.marshaller())\n", thisRef, name)
+        } else {
+          CodeBlock.of("writer.writeFragment(this@%L.%L.marshaller())\n", thisRef, name)
         }
       }
       is FieldType.Array -> {
         CodeBlock.builder()
-            .add("it.writeList(%L, %L) { value, listItemWriter ->\n", field, name)
-            .indent()
-            .add("value?.forEach { value ->\n")
-            .indent()
-            .add(type.rawType.writeListItemCode)
-            .add("\n")
-            .unindent()
-            .add("}")
-            .add("\n")
-            .unindent()
-            .add("}")
+            .beginControlFlow("writer.writeList(%L, this@%L.%L)·{ value, listItemWriter ->", field, thisRef, name)
+            .beginControlFlow("value?.forEach·{ value ->")
+            .add(type.writeListItemCode)
+            .endControlFlow()
+            .endControlFlow()
             .build()
       }
-      is FieldType.Fragments -> CodeBlock.of("%L.marshaller().marshal(it)", name)
+      is FieldType.Fragments -> CodeBlock.of("this@%L.%L.marshaller().marshal(writer)\n", thisRef, name)
     }
   }
 
-  private val FieldType.writeListItemCode: CodeBlock
+  private val FieldType.Array.writeListItemCode: CodeBlock
     get() {
-      return when (this) {
-        is FieldType.Scalar -> when (this) {
+      val safeValue = if (isOptional) "value?" else "value"
+      return when (rawType) {
+        is FieldType.Scalar -> when (rawType) {
           is FieldType.Scalar.String -> CodeBlock.of("listItemWriter.writeString(value)")
           is FieldType.Scalar.Int -> CodeBlock.of("listItemWriter.writeInt(value)")
           is FieldType.Scalar.Boolean -> CodeBlock.of("listItemWriter.writeBoolean(value)")
           is FieldType.Scalar.Float -> CodeBlock.of("listItemWriter.writeDouble(value)")
-          is FieldType.Scalar.Enum -> CodeBlock.of("listItemWriter.writeString(value?.rawValue)")
-          is FieldType.Scalar.Custom -> CodeBlock.of("listItemWriter.writeCustom(%T.%L, value)",
-              customEnumType.asTypeName(), customEnumConst)
+          is FieldType.Scalar.Enum -> CodeBlock.of("listItemWriter.writeString($safeValue.rawValue)")
+          is FieldType.Scalar.Custom -> {
+            CodeBlock.of("listItemWriter.writeCustom(%T.%L, value)", rawType.customEnumType.asTypeName(), rawType.customEnumConst)
+          }
         }
-        is FieldType.Object -> CodeBlock.of("listItemWriter.writeObject(value?.marshaller())",
-            asTypeName())
+        is FieldType.Object -> CodeBlock.of("listItemWriter.writeObject($safeValue.marshaller())", asTypeName())
         is FieldType.Array -> {
           CodeBlock.builder()
-              .add("listItemWriter.writeList(value) { value, listItemWriter ->\n",
-                  List::class.asClassName().parameterizedBy(rawType.asTypeName()))
-              .indent()
-              .add("value?.forEach { value ->\n", List::class.asClassName().parameterizedBy(rawType.asTypeName()))
-              .indent()
+              .beginControlFlow(
+                  "listItemWriter.writeList(value)·{ value, listItemWriter ->",
+                  List::class.asClassName().parameterizedBy(rawType.rawType.asTypeName())
+              )
+              .beginControlFlow(
+                  "value?.forEach·{ value ->", // value always nullable in ListItemWriter
+                  List::class.asClassName().parameterizedBy(rawType.rawType.asTypeName())
+              )
               .add(rawType.writeListItemCode)
-              .add("\n")
-              .unindent()
-              .add("}")
-              .add("\n")
-              .unindent()
-              .add("}")
+              .endControlFlow()
+              .endControlFlow()
               .build()
         }
         else -> throw IllegalArgumentException("Unsupported field type: $this")
@@ -390,7 +430,7 @@ internal object KotlinCodeGen {
     else -> this
   }
 
-  fun TypeRef.asTypeName() = ClassName(packageName = packageName, simpleName = name.capitalize())
+  fun TypeRef.asTypeName() = ClassName(packageName, name.capitalize())
 
   private fun Map<String, Any?>?.toCode(): CodeBlock? {
     return when {
@@ -411,5 +451,30 @@ internal object KotlinCodeGen {
     is Map<*, *> -> CodeBlock.of("%S to %L", key, (value as Map<String, Any>).toCode())
     null -> CodeBlock.of("%S to null", key)
     else -> CodeBlock.of("%S to %S", key, value)
+  }
+
+  fun TypeSpec.patchKotlinNativeOptionalArrayProperties(): TypeSpec {
+    val patchedNestedTypes = typeSpecs.map { it.patchKotlinNativeOptionalArrayProperties() }
+    val nonOptionalListPropertyAccessors = propertySpecs
+        .filter { propertySpec ->
+          val propertyType = propertySpec.type
+          propertyType is ParameterizedTypeName &&
+              propertyType.rawType == List::class.asClassName() &&
+              propertyType.typeArguments.single().isNullable
+        }
+        .map { propertySpec ->
+          val listItemType = (propertySpec.type as ParameterizedTypeName).typeArguments.single().copy(nullable = false)
+          val nonOptionalListType = List::class.asClassName().parameterizedBy(listItemType).copy(nullable = propertySpec.type.isNullable)
+          FunSpec
+              .builder("${propertySpec.name}FilterNotNull")
+              .returns(nonOptionalListType)
+              .addStatement("return %L%L.filterNotNull()", propertySpec.name, if (propertySpec.type.isNullable) "?" else "")
+              .build()
+        }
+    return toBuilder()
+        .addFunctions(nonOptionalListPropertyAccessors)
+        .apply { typeSpecs.clear() }
+        .addTypes(patchedNestedTypes)
+        .build()
   }
 }

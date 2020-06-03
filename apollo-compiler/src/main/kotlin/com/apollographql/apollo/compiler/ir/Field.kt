@@ -8,6 +8,7 @@ data class Field(
     val responseName: String,
     val fieldName: String,
     val type: String,
+    val typeDescription: String,
     val args: List<Argument> = emptyList(),
     val isConditional: Boolean = false,
     val fields: List<Field> = emptyList(),
@@ -20,15 +21,14 @@ data class Field(
     val sourceLocation: SourceLocation
 ) : CodeGenerator {
 
-  val fragmentSpreads: List<String> = fragmentRefs.map { it.name }
-
   override fun toTypeSpec(context: CodeGenerationContext, abstract: Boolean): TypeSpec {
     val fields = if (isNonScalar()) fields else emptyList()
     return SchemaTypeSpecBuilder(
         typeName = formatClassName(),
+        description = typeDescription,
         schemaType = type,
         fields = fields,
-        fragmentSpreads = fragmentSpreads,
+        fragmentRefs = fragmentRefs,
         inlineFragments = inlineFragments,
         context = context,
         abstract = abstract
@@ -108,11 +108,11 @@ data class Field(
     "_".repeat(originalClassName.length - className.length) + className.capitalize()
   }
 
-  fun isOptional(): Boolean = isConditional || !methodResponseType().endsWith("!") || inlineFragments.isNotEmpty()
+  fun isOptional(): Boolean = isConditional || !methodResponseType().endsWith("!")
 
   fun isNonScalar() = hasFragments() || fields.any()
 
-  private fun hasFragments() = fragmentSpreads.any() || inlineFragments.any()
+  private fun hasFragments() = fragmentRefs.any() || inlineFragments.any()
 
   private fun isList(): Boolean = type.removeSuffix("!").let { it.startsWith('[') && it.endsWith(']') }
 
@@ -135,7 +135,7 @@ data class Field(
 
   private fun toTypeName(responseType: String, context: CodeGenerationContext): TypeName {
     val packageName = if (isNonScalar()) "" else context.packageNameProvider.typesPackageName
-    return JavaTypeResolver(context, packageName, isDeprecated ?: false).resolve(responseType, isOptional())
+    return JavaTypeResolver(context, packageName, isDeprecated).resolve(responseType, isOptional())
   }
 
   private fun methodResponseType(): String {
@@ -169,6 +169,7 @@ data class Field(
         responseName = "__typename",
         fieldName = "__typename",
         type = "String!",
+        typeDescription = "",
         fragmentRefs = emptyList(),
         sourceLocation = SourceLocation.UNKNOWN
     )

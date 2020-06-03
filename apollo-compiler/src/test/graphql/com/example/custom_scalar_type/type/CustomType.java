@@ -6,12 +6,8 @@
 package com.example.custom_scalar_type.type;
 
 import com.apollographql.apollo.api.ScalarType;
-import java.lang.Class;
-import java.lang.Integer;
-import java.lang.Object;
 import java.lang.Override;
 import java.lang.String;
-import java.util.Date;
 
 public enum CustomType implements ScalarType {
   DATE {
@@ -21,32 +17,8 @@ public enum CustomType implements ScalarType {
     }
 
     @Override
-    public Class javaType() {
-      return Date.class;
-    }
-  },
-
-  UNSUPPORTEDTYPE {
-    @Override
-    public String typeName() {
-      return "UnsupportedType";
-    }
-
-    @Override
-    public Class javaType() {
-      return Object.class;
-    }
-  },
-
-  URL {
-    @Override
-    public String typeName() {
-      return "URL";
-    }
-
-    @Override
-    public Class javaType() {
-      return String.class;
+    public String className() {
+      return "java.util.Date";
     }
   },
 
@@ -57,8 +29,32 @@ public enum CustomType implements ScalarType {
     }
 
     @Override
-    public Class javaType() {
-      return Integer.class;
+    public String className() {
+      return "java.lang.Integer";
+    }
+  },
+
+  URL {
+    @Override
+    public String typeName() {
+      return "URL";
+    }
+
+    @Override
+    public String className() {
+      return "java.lang.String";
+    }
+  },
+
+  UNSUPPORTEDTYPE {
+    @Override
+    public String typeName() {
+      return "UnsupportedType";
+    }
+
+    @Override
+    public String className() {
+      return "java.lang.Object";
     }
   }
 }

@@ -8,18 +8,22 @@ package com.example.union_inline_fragments;
 import com.apollographql.apollo.api.Operation;
 import com.apollographql.apollo.api.OperationName;
 import com.apollographql.apollo.api.Query;
+import com.apollographql.apollo.api.Response;
 import com.apollographql.apollo.api.ResponseField;
-import com.apollographql.apollo.api.ResponseFieldMapper;
-import com.apollographql.apollo.api.ResponseFieldMarshaller;
-import com.apollographql.apollo.api.ResponseReader;
-import com.apollographql.apollo.api.ResponseWriter;
+import com.apollographql.apollo.api.ScalarTypeAdapters;
+import com.apollographql.apollo.api.internal.OperationRequestBodyComposer;
 import com.apollographql.apollo.api.internal.Optional;
+import com.apollographql.apollo.api.internal.QueryDocumentMinifier;
+import com.apollographql.apollo.api.internal.ResponseFieldMapper;
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller;
+import com.apollographql.apollo.api.internal.ResponseReader;
+import com.apollographql.apollo.api.internal.ResponseWriter;
+import com.apollographql.apollo.api.internal.SimpleOperationResponseParser;
 import com.apollographql.apollo.api.internal.UnmodifiableMapBuilder;
 import com.apollographql.apollo.api.internal.Utils;
-import com.apollographql.apollo.internal.QueryDocumentMinifier;
 import com.example.union_inline_fragments.type.CustomType;
 import com.example.union_inline_fragments.type.Episode;
-import java.lang.Deprecated;
+import java.io.IOException;
 import java.lang.Object;
 import java.lang.Override;
 import java.lang.String;
@@ -27,11 +31,14 @@ import java.lang.SuppressWarnings;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import okio.Buffer;
+import okio.BufferedSource;
+import okio.ByteString;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery.Data>, Operation.Variables> {
-  public static final String OPERATION_ID = "d917122adce28477721dc274dd7fce307cb1b714452af1df8bb26087b8ec33d0";
+  public static final String OPERATION_ID = "5450032fd838d0216d8b419846d25e09f98228b403e520aacd7eb68cd838f4da";
 
   public static final String QUERY_DOCUMENT = QueryDocumentMinifier.minify(
     "query TestQuery {\n"
@@ -59,7 +66,6 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
         + "          friends {\n"
         + "            __typename\n"
         + "            id\n"
-        + "            deprecated\n"
         + "          }\n"
         + "        }\n"
         + "      }\n"
@@ -118,6 +124,53 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     return OPERATION_NAME;
   }
 
+  @Override
+  @NotNull
+  public Response<Optional<TestQuery.Data>> parse(@NotNull final BufferedSource source,
+      @NotNull final ScalarTypeAdapters scalarTypeAdapters) throws IOException {
+    return SimpleOperationResponseParser.parse(source, this, scalarTypeAdapters);
+  }
+
+  @Override
+  @NotNull
+  public Response<Optional<TestQuery.Data>> parse(@NotNull final ByteString byteString,
+      @NotNull final ScalarTypeAdapters scalarTypeAdapters) throws IOException {
+    return parse(new Buffer().write(byteString), scalarTypeAdapters);
+  }
+
+  @Override
+  @NotNull
+  public Response<Optional<TestQuery.Data>> parse(@NotNull final BufferedSource source) throws
+      IOException {
+    return parse(source, ScalarTypeAdapters.DEFAULT);
+  }
+
+  @Override
+  @NotNull
+  public Response<Optional<TestQuery.Data>> parse(@NotNull final ByteString byteString) throws
+      IOException {
+    return parse(byteString, ScalarTypeAdapters.DEFAULT);
+  }
+
+  @Override
+  @NotNull
+  public ByteString composeRequestBody(@NotNull final ScalarTypeAdapters scalarTypeAdapters) {
+    return OperationRequestBodyComposer.compose(this, false, true, scalarTypeAdapters);
+  }
+
+  @NotNull
+  @Override
+  public ByteString composeRequestBody() {
+    return OperationRequestBodyComposer.compose(this, false, true, ScalarTypeAdapters.DEFAULT);
+  }
+
+  @Override
+  @NotNull
+  public ByteString composeRequestBody(final boolean autoPersistQueries,
+      final boolean withQueryDocument, @NotNull final ScalarTypeAdapters scalarTypeAdapters) {
+    return OperationRequestBodyComposer.compose(this, autoPersistQueries, withQueryDocument, scalarTypeAdapters);
+  }
+
   public static final class Builder {
     Builder() {
     }
@@ -127,6 +180,9 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     }
   }
 
+  /**
+   * Data from the response after executing this GraphQL operation
+   */
   public static class Data implements Operation.Data {
     static final ResponseField[] $responseFields = {
       ResponseField.forList("search", "search", new UnmodifiableMapBuilder<String, Object>(1)
@@ -150,7 +206,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       return this.search;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -239,6 +295,15 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     }
 
     final class Mapper implements ResponseFieldMapper<Search> {
+      static final ResponseField[] $responseFields = {
+        ResponseField.forFragment("__typename", "__typename", Arrays.<ResponseField.Condition>asList(
+          ResponseField.Condition.typeCondition(new String[] {"Human", "Droid"})
+        )),
+        ResponseField.forFragment("__typename", "__typename", Arrays.<ResponseField.Condition>asList(
+          ResponseField.Condition.typeCondition(new String[] {"Starship"})
+        ))
+      };
+
       final AsCharacter.Mapper asCharacterFieldMapper = new AsCharacter.Mapper();
 
       final AsStarship.Mapper asStarshipFieldMapper = new AsStarship.Mapper();
@@ -247,19 +312,18 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
 
       @Override
       public Search map(ResponseReader reader) {
-        final AsCharacter asCharacter = reader.readConditional(ResponseField.forInlineFragment("__typename", "__typename", Arrays.asList("Human",
-        "Droid")), new ResponseReader.ConditionalTypeReader<AsCharacter>() {
+        final AsCharacter asCharacter = reader.readFragment($responseFields[0], new ResponseReader.ObjectReader<AsCharacter>() {
           @Override
-          public AsCharacter read(String conditionalType, ResponseReader reader) {
+          public AsCharacter read(ResponseReader reader) {
             return asCharacterFieldMapper.map(reader);
           }
         });
         if (asCharacter != null) {
           return asCharacter;
         }
-        final AsStarship asStarship = reader.readConditional(ResponseField.forInlineFragment("__typename", "__typename", Arrays.asList("Starship")), new ResponseReader.ConditionalTypeReader<AsStarship>() {
+        final AsStarship asStarship = reader.readFragment($responseFields[1], new ResponseReader.ObjectReader<AsStarship>() {
           @Override
-          public AsStarship read(String conditionalType, ResponseReader reader) {
+          public AsStarship read(ResponseReader reader) {
             return asStarshipFieldMapper.map(reader);
           }
         });
@@ -281,6 +345,9 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     }
   }
 
+  /**
+   * A character from the Star Wars universe
+   */
   public static class AsCharacter implements Search {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -336,7 +403,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       return this.friends;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -426,6 +493,9 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     }
   }
 
+  /**
+   * A character from the Star Wars universe
+   */
   public interface Friend {
     @NotNull String __typename();
 
@@ -448,6 +518,15 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     }
 
     final class Mapper implements ResponseFieldMapper<Friend> {
+      static final ResponseField[] $responseFields = {
+        ResponseField.forFragment("__typename", "__typename", Arrays.<ResponseField.Condition>asList(
+          ResponseField.Condition.typeCondition(new String[] {"Human"})
+        )),
+        ResponseField.forFragment("__typename", "__typename", Arrays.<ResponseField.Condition>asList(
+          ResponseField.Condition.typeCondition(new String[] {"Droid"})
+        ))
+      };
+
       final AsHuman.Mapper asHumanFieldMapper = new AsHuman.Mapper();
 
       final AsDroid.Mapper asDroidFieldMapper = new AsDroid.Mapper();
@@ -456,18 +535,18 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
 
       @Override
       public Friend map(ResponseReader reader) {
-        final AsHuman asHuman = reader.readConditional(ResponseField.forInlineFragment("__typename", "__typename", Arrays.asList("Human")), new ResponseReader.ConditionalTypeReader<AsHuman>() {
+        final AsHuman asHuman = reader.readFragment($responseFields[0], new ResponseReader.ObjectReader<AsHuman>() {
           @Override
-          public AsHuman read(String conditionalType, ResponseReader reader) {
+          public AsHuman read(ResponseReader reader) {
             return asHumanFieldMapper.map(reader);
           }
         });
         if (asHuman != null) {
           return asHuman;
         }
-        final AsDroid asDroid = reader.readConditional(ResponseField.forInlineFragment("__typename", "__typename", Arrays.asList("Droid")), new ResponseReader.ConditionalTypeReader<AsDroid>() {
+        final AsDroid asDroid = reader.readFragment($responseFields[1], new ResponseReader.ObjectReader<AsDroid>() {
           @Override
-          public AsDroid read(String conditionalType, ResponseReader reader) {
+          public AsDroid read(ResponseReader reader) {
             return asDroidFieldMapper.map(reader);
           }
         });
@@ -489,6 +568,9 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     }
   }
 
+  /**
+   * A humanoid creature from the Star Wars universe
+   */
   public static class AsHuman implements Friend {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -544,7 +626,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       return this.name;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -634,6 +716,9 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     }
   }
 
+  /**
+   * A character from the Star Wars universe
+   */
   public static class Friend1 {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -666,7 +751,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       return this.firstAppearsIn;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -731,6 +816,9 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     }
   }
 
+  /**
+   * An autonomous mechanical character in the Star Wars universe
+   */
   public static class AsDroid implements Friend {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -786,7 +874,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       return this.name;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -876,18 +964,18 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     }
   }
 
+  /**
+   * A character from the Star Wars universe
+   */
   public static class Friend2 {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
-      ResponseField.forCustomType("id", "id", null, false, CustomType.ID, Collections.<ResponseField.Condition>emptyList()),
-      ResponseField.forString("deprecated", "deprecated", null, false, Collections.<ResponseField.Condition>emptyList())
+      ResponseField.forCustomType("id", "id", null, false, CustomType.ID, Collections.<ResponseField.Condition>emptyList())
     };
 
     final @NotNull String __typename;
 
     final @NotNull String id;
-
-    final @NotNull @Deprecated String deprecated;
 
     private transient volatile String $toString;
 
@@ -895,11 +983,9 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
 
     private transient volatile boolean $hashCodeMemoized;
 
-    public Friend2(@NotNull String __typename, @NotNull String id,
-        @NotNull @Deprecated String deprecated) {
+    public Friend2(@NotNull String __typename, @NotNull String id) {
       this.__typename = Utils.checkNotNull(__typename, "__typename == null");
       this.id = Utils.checkNotNull(id, "id == null");
-      this.deprecated = Utils.checkNotNull(deprecated, "deprecated == null");
     }
 
     public @NotNull String __typename() {
@@ -913,22 +999,13 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       return this.id;
     }
 
-    /**
-     * Test deprecated field
-     * @deprecated For test purpose only
-     */
-    public @NotNull @Deprecated String deprecated() {
-      return this.deprecated;
-    }
-
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
         public void marshal(ResponseWriter writer) {
           writer.writeString($responseFields[0], __typename);
           writer.writeCustom((ResponseField.CustomTypeField) $responseFields[1], id);
-          writer.writeString($responseFields[2], deprecated);
         }
       };
     }
@@ -938,8 +1015,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       if ($toString == null) {
         $toString = "Friend2{"
           + "__typename=" + __typename + ", "
-          + "id=" + id + ", "
-          + "deprecated=" + deprecated
+          + "id=" + id
           + "}";
       }
       return $toString;
@@ -953,8 +1029,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       if (o instanceof Friend2) {
         Friend2 that = (Friend2) o;
         return this.__typename.equals(that.__typename)
-         && this.id.equals(that.id)
-         && this.deprecated.equals(that.deprecated);
+         && this.id.equals(that.id);
       }
       return false;
     }
@@ -967,8 +1042,6 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
         h ^= __typename.hashCode();
         h *= 1000003;
         h ^= id.hashCode();
-        h *= 1000003;
-        h ^= deprecated.hashCode();
         $hashCode = h;
         $hashCodeMemoized = true;
       }
@@ -980,12 +1053,14 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       public Friend2 map(ResponseReader reader) {
         final String __typename = reader.readString($responseFields[0]);
         final String id = reader.readCustomType((ResponseField.CustomTypeField) $responseFields[1]);
-        final String deprecated = reader.readString($responseFields[2]);
-        return new Friend2(__typename, id, deprecated);
+        return new Friend2(__typename, id);
       }
     }
   }
 
+  /**
+   * A character from the Star Wars universe
+   */
   public static class AsCharacter1 implements Friend {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -1018,7 +1093,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       return this.name;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -1109,7 +1184,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       return this.name;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -1189,7 +1264,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       return this.__typename;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override

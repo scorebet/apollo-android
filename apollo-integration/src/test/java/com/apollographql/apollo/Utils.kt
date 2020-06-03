@@ -1,10 +1,15 @@
 package com.apollographql.apollo
 
-import com.google.common.io.CharStreams
-
 import com.apollographql.apollo.api.Response
+import com.apollographql.apollo.fetcher.ApolloResponseFetchers.CACHE_ONLY
+import com.apollographql.apollo.fetcher.ApolloResponseFetchers.NETWORK_ONLY
 import com.apollographql.apollo.rx2.Rx2Apollo
-
+import com.google.common.io.CharStreams
+import io.reactivex.functions.Predicate
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import java.io.File
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStreamReader
 import java.nio.charset.Charset
@@ -13,15 +18,6 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
-
-import io.reactivex.functions.Predicate
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
-
-import com.apollographql.apollo.fetcher.ApolloResponseFetchers.CACHE_ONLY
-import com.apollographql.apollo.fetcher.ApolloResponseFetchers.NETWORK_ONLY
-import java.io.File
-import java.io.FileNotFoundException
 
 object Utils {
 
@@ -46,7 +42,7 @@ object Utils {
 
   @Throws(IOException::class)
   fun mockResponse(fileName: String): MockResponse {
-    return MockResponse().setChunkedBody(Utils.readFileToString(Utils::class.java, "/$fileName"), 32)
+    return MockResponse().setChunkedBody(readFileToString(Utils::class.java, "/$fileName"), 32)
   }
 
   fun <T> assertResponse(call: ApolloCall<T>, predicate: Predicate<Response<T>>) {
@@ -79,30 +75,18 @@ object Utils {
 
   fun immediateExecutorService(): ExecutorService {
     return object : AbstractExecutorService() {
-      override fun shutdown() {
+      override fun shutdown() = Unit
 
-      }
+      override fun shutdownNow(): List<Runnable>? = null
 
-      override fun shutdownNow(): List<Runnable>? {
-        return null
-      }
+      override fun isShutdown(): Boolean = false
 
-      override fun isShutdown(): Boolean {
-        return false
-      }
-
-      override fun isTerminated(): Boolean {
-        return false
-      }
+      override fun isTerminated(): Boolean = false
 
       @Throws(InterruptedException::class)
-      override fun awaitTermination(l: Long, timeUnit: TimeUnit): Boolean {
-        return false
-      }
+      override fun awaitTermination(l: Long, timeUnit: TimeUnit): Boolean = false
 
-      override fun execute(runnable: Runnable) {
-        runnable.run()
-      }
+      override fun execute(runnable: Runnable) = runnable.run()
     }
   }
 
@@ -124,7 +108,7 @@ object Utils {
   fun checkTestFixture(actualText: String, expectedPath: String) {
     val expected = File("src/test/fixtures/$expectedPath")
     val expectedText = try {
-      expected.readText()
+      expected.readText().removeSuffix("\n")
     } catch (e: FileNotFoundException) {
       ""
     }
@@ -132,7 +116,7 @@ object Utils {
     expected.parentFile.mkdirs()
     if (actualText != expectedText) {
       when (System.getProperty("updateTestFixtures")?.trim()) {
-        "on", "true", "1" ->{
+        "on", "true", "1" -> {
           expected.writeText(actualText)
         }
         else -> {

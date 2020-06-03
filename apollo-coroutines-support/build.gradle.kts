@@ -1,28 +1,16 @@
-apply(plugin = "java")
-apply(plugin = "kotlin")
-
-withConvention(JavaPluginConvention::class) {
-  targetCompatibility = JavaVersion.VERSION_1_7
-  sourceCompatibility = JavaVersion.VERSION_1_7
+plugins {
+  `java-library`
+  kotlin("jvm")
 }
 
 dependencies {
-  add("compileOnly", project(":apollo-runtime"))
-  add("compileOnly", project(":apollo-api"))
-  add("implementation", groovy.util.Eval.x(project, "x.dep.kotlin.coroutines.core"))
-  add("implementation", groovy.util.Eval.x(project, "x.dep.kotlin.stdLib"))
+  implementation(project(":apollo-runtime"))
+  implementation(project(":apollo-api"))
+  implementation(groovy.util.Eval.x(project, "x.dep.kotlin.coroutines.core"))
+  implementation(groovy.util.Eval.x(project, "x.dep.kotlin.stdLib"))
 
-  add("testImplementation", groovy.util.Eval.x(project, "x.dep.junit"))
-  add("testImplementation", groovy.util.Eval.x(project, "x.dep.truth"))
-  add("testImplementation", groovy.util.Eval.x(project, "x.dep.okHttp.mockWebServer"))
-  add("testImplementation", groovy.util.Eval.x(project, "x.dep.okHttp.testSupport"))
-}
-
-apply {
-  from(rootProject.file("gradle/gradle-mvn-push.gradle"))
-}
-apply {
-  from(rootProject.file("gradle/bintray.gradle"))
+  testImplementation(groovy.util.Eval.x(project, "x.dep.junit"))
+  testImplementation(groovy.util.Eval.x(project, "x.dep.truth"))
 }
 
 tasks.withType<Javadoc> {

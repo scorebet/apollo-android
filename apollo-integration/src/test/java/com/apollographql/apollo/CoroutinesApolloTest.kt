@@ -7,22 +7,20 @@ import com.apollographql.apollo.api.Input
 import com.apollographql.apollo.api.Response
 import com.apollographql.apollo.cache.normalized.lru.EvictionPolicy
 import com.apollographql.apollo.cache.normalized.lru.LruNormalizedCacheFactory
-import com.apollographql.apollo.coroutines.toChannel
 import com.apollographql.apollo.coroutines.toDeferred
 import com.apollographql.apollo.coroutines.toFlow
 import com.apollographql.apollo.coroutines.toJob
 import com.apollographql.apollo.exception.ApolloException
-import com.apollographql.apollo.exception.ApolloParseException
-import com.apollographql.apollo.fetcher.ApolloResponseFetchers
 import com.apollographql.apollo.integration.normalizer.EpisodeHeroNameQuery
-import com.apollographql.apollo.integration.normalizer.HeroAndFriendsNamesWithIDsQuery
+import com.apollographql.apollo.integration.normalizer.HeroNameQuery
+import com.apollographql.apollo.integration.normalizer.HeroNameWithIdQuery
 import com.apollographql.apollo.integration.normalizer.type.Episode
 import com.google.common.truth.Truth.assertThat
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.retry
+import kotlinx.coroutines.flow.single
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
@@ -32,9 +30,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
-
 class CoroutinesApolloTest {
   private lateinit var apolloClient: ApolloClient
+
   @get:Rule
   val server = MockWebServer()
 
@@ -53,40 +51,13 @@ class CoroutinesApolloTest {
   }
 
   @Test
-  fun callChannelProducesValue() {
-    server.enqueue(mockResponse(FILE_EPISODE_HERO_NAME_WITH_ID))
-
-    val channel = apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).toChannel()
-    runBlocking {
-      val response = channel.receive()
-
-      assertThat(response.data()!!.hero()!!.name()).isEqualTo("R2-D2")
-    }
-  }
-
-  @Test
   fun callDeferredProducesValue() {
     server.enqueue(mockResponse(FILE_EPISODE_HERO_NAME_WITH_ID))
 
-    val deferred = apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).toDeferred()
     runBlocking {
-      assertThat(deferred.await().data()!!.hero()!!.name()).isEqualTo("R2-D2")
-    }
-  }
-
-  @Test
-  fun errorIsTriggered() {
-    server.enqueue(MockResponse().setResponseCode(200).setBody("nonsense"))
-
-    val channel = apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).toChannel()
-    runBlocking {
-      var exception: java.lang.Exception? = null
-      try {
-        channel.receive()
-      } catch (e: Exception) {
-        exception = e
-      }
-      assertThat(exception is ApolloParseException).isTrue()
+      val response: Response<EpisodeHeroNameQuery.Data> =
+          apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).toDeferred().await()
+      assertThat(response.data!!.hero()!!.name()).isEqualTo("R2-D2")
     }
   }
 
@@ -95,8 +66,7 @@ class CoroutinesApolloTest {
     server.enqueue(mockResponse(FILE_EPISODE_HERO_NAME_WITH_ID))
 
     runBlocking {
-      val job = apolloClient.prefetch(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE)))
-          .toJob()
+      val job = apolloClient.prefetch(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).toJob()
       job.join()
     }
   }
@@ -113,125 +83,99 @@ class CoroutinesApolloTest {
   }
 
   @Test
-  fun queryWatcherUpdatedSameQueryDifferentResults() {
+  @ExperimentalCoroutinesApi
+  fun flowCanBeRead() {
     server.enqueue(mockResponse(FILE_EPISODE_HERO_NAME_WITH_ID))
 
-    val channel = apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).watcher().toChannel()
-
-    server.enqueue(mockResponse(FILE_EPISODE_HERO_NAME_CHANGE))
-    apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE)))
-        .responseFetcher(ApolloResponseFetchers.NETWORK_ONLY)
-        .enqueue(null)
+    val flow = apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).toFlow()
 
     runBlocking {
-      val response0 = channel.receive()
-      assertThat(response0.data()!!.hero()!!.name()).isEqualTo("R2-D2")
-
-      val response1 = channel.receive()
-      assertThat(response1.data()!!.hero()!!.name()).isEqualTo("Artoo")
+      val result = mutableListOf<Response<EpisodeHeroNameQuery.Data>>()
+      flow.toList(result)
+      assertThat(result.size).isEqualTo(1)
+      assertThat(result[0].data?.hero()?.name()).isEqualTo("R2-D2")
     }
   }
 
   @Test
-  fun queryWatcherNotUpdatedSameQuerySameResults() {
-    server.enqueue(mockResponse(FILE_EPISODE_HERO_NAME_WITH_ID))
+  @ExperimentalCoroutinesApi
+  fun flowError() {
+    server.enqueue(MockResponse().setResponseCode(200).setBody("nonsense"))
 
-    val channel = apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).watcher().toChannel()
-
-    server.enqueue(mockResponse(FILE_EPISODE_HERO_NAME_WITH_ID))
-    apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE)))
-        .responseFetcher(ApolloResponseFetchers.NETWORK_ONLY)
-        .enqueue(null)
+    val flow = apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).toFlow()
 
     runBlocking {
-      val response0 = channel.receive()
-      assertThat(response0.data()!!.hero()!!.name()).isEqualTo("R2-D2")
+      val result = mutableListOf<Response<EpisodeHeroNameQuery.Data>>()
+      try {
+        flow.toList(result)
+      } catch (e: ApolloException) {
+        return@runBlocking
+      }
 
-      assertThat(channel.isEmpty).isEqualTo(true)
+      throw Exception("exception has not been thrown")
     }
   }
 
   @Test
-  fun queryWatcherUpdatedDifferentQueryDifferentResults() {
+  @ExperimentalCoroutinesApi
+  fun callFlowRetry() {
+    server.enqueue(MockResponse().setResponseCode(200).setBody("nonsense"))
     server.enqueue(mockResponse(FILE_EPISODE_HERO_NAME_WITH_ID))
 
-    val channel = apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).watcher().toChannel()
-
-    server.enqueue(mockResponse("HeroAndFriendsNameWithIdsNameChange.json"))
-    apolloClient.query(HeroAndFriendsNamesWithIDsQuery(Input.fromNullable(Episode.NEWHOPE)))
-        .enqueue(null)
-
-    runBlocking {
-      val response0 = channel.receive()
-      assertThat(response0.data()!!.hero()!!.name()).isEqualTo("R2-D2")
-
-      val response1 = channel.receive()
-      assertThat(response1.data()!!.hero()!!.name()).isEqualTo("Artoo")
+    val response: Response<EpisodeHeroNameQuery.Data> = runBlocking {
+      apolloClient
+          .query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE)))
+          .toFlow()
+          .retry(retries = 1)
+          .single()
     }
+
+    assertThat(response.data!!.hero()!!.name()).isEqualTo("R2-D2")
   }
 
   @Test
-  fun queryWatcherUpdatedConflatedOnlyReturnsLastResult() {
+  @ExperimentalCoroutinesApi
+  fun watcherFlowRetry() {
+    server.enqueue(MockResponse().setResponseCode(200).setBody("nonsense"))
     server.enqueue(mockResponse(FILE_EPISODE_HERO_NAME_WITH_ID))
 
-    val channel = apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).watcher().toChannel(Channel.CONFLATED)
-
-    server.enqueue(mockResponse("HeroAndFriendsNameWithIdsNameChange.json"))
-    apolloClient.query(HeroAndFriendsNamesWithIDsQuery(Input.fromNullable(Episode.NEWHOPE)))
-        .enqueue(null)
-
-    runBlocking {
-      delay(500)
-      val response1 = channel.receive()
-      assertThat(response1.data()!!.hero()!!.name()).isEqualTo("Artoo")
+    val response: Response<EpisodeHeroNameQuery.Data> = runBlocking {
+      apolloClient
+          .query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE)))
+          .watcher()
+          .toFlow()
+          .retry(retries = 1)
+          .first()
     }
+
+    assertThat(response.data!!.hero()!!.name()).isEqualTo("R2-D2")
   }
 
   @Test
-  fun queryWatcherCancelClosesChannel() {
-    server.enqueue(mockResponse(FILE_EPISODE_HERO_NAME_WITH_ID))
+  @ExperimentalCoroutinesApi
+  fun watcherFlowCancellationCancelsWatcher(): Unit = runBlocking {
+    server.enqueue(mockResponse("HeroNameWithIdResponse.json"))
+    apolloClient
+        .query(HeroNameWithIdQuery())
+        .watcher()
+        .toFlow()
+        .first() // Cancels the flow after first response
 
-    val channel = apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).watcher().toChannel()
+    apolloClient.clearNormalizedCache()
+    apolloClient.clearHttpCache()
 
-    channel.cancel()
-    assertThat(channel.isClosedForReceive).isEqualTo(true)
-  }
+    server.enqueue(mockResponse("HeroNameResponse.json"))
+    apolloClient
+        .query(HeroNameQuery())
+        .watcher()
+        .toFlow()
+        .first()
 
-    @Test
-    fun flowCanBeRead() {
-        server.enqueue(mockResponse(FILE_EPISODE_HERO_NAME_WITH_ID))
-
-        val flow = apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).toFlow()
-
-        runBlocking {
-            val result = mutableListOf<Response<EpisodeHeroNameQuery.Data>>()
-            flow.toList(result)
-            assertThat(result.size).isEqualTo(1)
-            assertThat(result[0].data()?.hero()?.name()).isEqualTo("R2-D2")
-        }
-    }
-
-    @Test
-    fun flowError() {
-        server.enqueue(MockResponse().setResponseCode(200).setBody("nonsense"))
-
-        val flow = apolloClient.query(EpisodeHeroNameQuery(Input.fromNullable(Episode.EMPIRE))).toFlow()
-
-        runBlocking {
-            val result = mutableListOf<Response<EpisodeHeroNameQuery.Data>>()
-            try {
-                flow.toList(result)
-            } catch (e: ApolloException) {
-                return@runBlocking
-            }
-
-            throw Exception("exception has not been thrown")
-        }
-    }
+    assertThat(server.requestCount).isEqualTo(2)
+  }.let { }
 
   companion object {
 
-    private val FILE_EPISODE_HERO_NAME_WITH_ID = "EpisodeHeroNameResponseWithId.json"
-    private val FILE_EPISODE_HERO_NAME_CHANGE = "EpisodeHeroNameResponseNameChange.json"
+    private const val FILE_EPISODE_HERO_NAME_WITH_ID = "EpisodeHeroNameResponseWithId.json"
   }
 }

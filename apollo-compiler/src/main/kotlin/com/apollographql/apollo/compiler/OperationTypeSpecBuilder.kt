@@ -1,11 +1,30 @@
 package com.apollographql.apollo.compiler
 
 import com.apollographql.apollo.api.OperationName
-import com.apollographql.apollo.api.ResponseFieldMapper
+import com.apollographql.apollo.api.Response
+import com.apollographql.apollo.api.ScalarTypeAdapters
+import com.apollographql.apollo.api.internal.OperationRequestBodyComposer
+import com.apollographql.apollo.api.internal.QueryDocumentMinifier
+import com.apollographql.apollo.api.internal.ResponseFieldMapper
+import com.apollographql.apollo.api.internal.SimpleOperationResponseParser
 import com.apollographql.apollo.compiler.VisitorSpec.VISITOR_CLASSNAME
-import com.apollographql.apollo.compiler.ir.*
-import com.apollographql.apollo.internal.QueryDocumentMinifier
-import com.squareup.javapoet.*
+import com.apollographql.apollo.compiler.ir.CodeGenerationContext
+import com.apollographql.apollo.compiler.ir.CodeGenerator
+import com.apollographql.apollo.compiler.ir.Fragment
+import com.apollographql.apollo.compiler.ir.Operation
+import com.apollographql.apollo.compiler.ir.Variable
+import com.squareup.javapoet.ClassName
+import com.squareup.javapoet.CodeBlock
+import com.squareup.javapoet.FieldSpec
+import com.squareup.javapoet.MethodSpec
+import com.squareup.javapoet.ParameterSpec
+import com.squareup.javapoet.ParameterizedTypeName
+import com.squareup.javapoet.TypeName
+import com.squareup.javapoet.TypeSpec
+import okio.Buffer
+import okio.BufferedSource
+import okio.ByteString
+import java.io.IOException
 import javax.lang.model.element.Modifier
 
 class OperationTypeSpecBuilder(
@@ -21,7 +40,8 @@ class OperationTypeSpecBuilder(
     return TypeSpec.classBuilder(operationTypeName)
         .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
         .addSuperinterface(operationSuperInterface(context))
-        .addOperationId(operation)
+        .applyIf(operation.description.isNotBlank()) { addJavadoc("\$L\n", operation.description) }
+        .addOperationId(operation, newContext)
         .addQueryDocumentDefinition()
         .addConstructor(context)
         .addMethod(wrapDataMethod(context))
@@ -30,6 +50,15 @@ class OperationTypeSpecBuilder(
         .addBuilder(context)
         .addType(operation.toTypeSpec(newContext, abstract))
         .addOperationName()
+        .addMethod(parseMethod(context))
+        .addMethod(parseByteStringMethod(context))
+        .addMethod(parseMethodWithDefaultScalarTypeAdapters(context))
+        .addMethod(parseByteStringMethodWithDefaultScalarTypeAdapters(context))
+        .addMethod(composeRequestBody())
+        .addMethod(composeRequestBodyWithDefaultScalarTypeAdapters())
+        .applyIf(operation.isQuery()) {
+          addMethod(composeRequestBodyForQuery())
+        }
         .build()
         .flatten(excludeTypeNames = listOf(
             VISITOR_CLASSNAME,
@@ -55,10 +84,12 @@ class OperationTypeSpecBuilder(
     }
   }
 
-  private fun TypeSpec.Builder.addOperationId(operation: Operation): TypeSpec.Builder {
+  private fun TypeSpec.Builder.addOperationId(operation: Operation, context: CodeGenerationContext): TypeSpec.Builder {
+    val id = context.operationIdGenerator.apply(QueryDocumentMinifier.minify(operation.sourceWithFragments), operation.filePath)
+
     addField(FieldSpec.builder(ClassNames.STRING, OPERATION_ID_FIELD_NAME)
         .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-        .initializer("\$S", QueryDocumentMinifier.minify(operation.sourceWithFragments).sha256())
+        .initializer("\$S", id)
         .build()
     )
 
@@ -264,6 +295,137 @@ class OperationTypeSpecBuilder(
 
     return addOperationNameField()
         .addOperationNameAccessor()
+  }
+
+  private fun parseMethod(context: CodeGenerationContext): MethodSpec {
+    return MethodSpec
+        .methodBuilder("parse")
+        .addAnnotation(Annotations.OVERRIDE)
+        .addAnnotation(Annotations.NONNULL)
+        .addModifiers(Modifier.PUBLIC)
+        .addParameter(ParameterSpec
+            .builder(BufferedSource::class.java, "source", Modifier.FINAL)
+            .addAnnotation(Annotations.NONNULL)
+            .build()
+        )
+        .addParameter(ParameterSpec
+            .builder(ScalarTypeAdapters::class.java, "scalarTypeAdapters", Modifier.FINAL)
+            .addAnnotation(Annotations.NONNULL)
+            .build()
+        )
+        .addException(IOException::class.java)
+        .returns(ParameterizedTypeName.get(ClassName.get(Response::class.java), wrapperType(context)))
+        .addStatement("return \$T.parse(source, this, scalarTypeAdapters)", SimpleOperationResponseParser::class.java)
+        .build()
+  }
+
+  private fun parseMethodWithDefaultScalarTypeAdapters(context: CodeGenerationContext): MethodSpec {
+    return MethodSpec
+        .methodBuilder("parse")
+        .addAnnotation(Annotations.OVERRIDE)
+        .addAnnotation(Annotations.NONNULL)
+        .addModifiers(Modifier.PUBLIC)
+        .addParameter(ParameterSpec
+            .builder(BufferedSource::class.java, "source", Modifier.FINAL)
+            .addAnnotation(Annotations.NONNULL)
+            .build()
+        )
+        .addException(IOException::class.java)
+        .returns(ParameterizedTypeName.get(ClassName.get(Response::class.java), wrapperType(context)))
+        .addStatement("return parse(source, \$T.DEFAULT)", ScalarTypeAdapters::class.java)
+        .build()
+  }
+
+  private fun parseByteStringMethod(context: CodeGenerationContext): MethodSpec {
+    return MethodSpec
+        .methodBuilder("parse")
+        .addAnnotation(Annotations.OVERRIDE)
+        .addAnnotation(Annotations.NONNULL)
+        .addModifiers(Modifier.PUBLIC)
+        .addParameter(ParameterSpec
+            .builder(ByteString::class.java, "byteString", Modifier.FINAL)
+            .addAnnotation(Annotations.NONNULL)
+            .build()
+        )
+        .addParameter(ParameterSpec
+            .builder(ScalarTypeAdapters::class.java, "scalarTypeAdapters", Modifier.FINAL)
+            .addAnnotation(Annotations.NONNULL)
+            .build()
+        )
+        .addException(IOException::class.java)
+        .returns(ParameterizedTypeName.get(ClassName.get(Response::class.java), wrapperType(context)))
+        .addStatement("return parse(new \$T().write(byteString), scalarTypeAdapters)", Buffer::class.java)
+        .build()
+  }
+
+  private fun parseByteStringMethodWithDefaultScalarTypeAdapters(context: CodeGenerationContext): MethodSpec {
+    return MethodSpec
+        .methodBuilder("parse")
+        .addAnnotation(Annotations.OVERRIDE)
+        .addAnnotation(Annotations.NONNULL)
+        .addModifiers(Modifier.PUBLIC)
+        .addParameter(ParameterSpec
+            .builder(ByteString::class.java, "byteString", Modifier.FINAL)
+            .addAnnotation(Annotations.NONNULL)
+            .build()
+        )
+        .addException(IOException::class.java)
+        .returns(ParameterizedTypeName.get(ClassName.get(Response::class.java), wrapperType(context)))
+        .addStatement("return parse(byteString, \$T.DEFAULT)", ScalarTypeAdapters::class.java)
+        .build()
+  }
+
+  private fun composeRequestBody(): MethodSpec {
+    return MethodSpec
+        .methodBuilder("composeRequestBody")
+        .addAnnotation(Annotations.OVERRIDE)
+        .addAnnotation(Annotations.NONNULL)
+        .addModifiers(Modifier.PUBLIC)
+        .addParameter(ParameterSpec
+            .builder(ScalarTypeAdapters::class.java, "scalarTypeAdapters", Modifier.FINAL)
+            .addAnnotation(Annotations.NONNULL)
+            .build()
+        )
+        .returns(ByteString::class.java)
+        .addStatement("return \$T.compose(this, false, true, scalarTypeAdapters)", OperationRequestBodyComposer::class.java)
+        .build()
+  }
+
+  private fun composeRequestBodyWithDefaultScalarTypeAdapters(): MethodSpec {
+    return MethodSpec
+        .methodBuilder("composeRequestBody")
+        .addAnnotation(Annotations.NONNULL)
+        .addAnnotation(Annotations.OVERRIDE)
+        .addModifiers(Modifier.PUBLIC)
+        .returns(ByteString::class.java)
+        .addStatement("return \$T.compose(this, false, true, \$T.DEFAULT)", OperationRequestBodyComposer::class.java,
+            ScalarTypeAdapters::class.java)
+        .build()
+  }
+
+  private fun composeRequestBodyForQuery(): MethodSpec {
+    return MethodSpec
+        .methodBuilder("composeRequestBody")
+        .addAnnotation(Annotations.OVERRIDE)
+        .addAnnotation(Annotations.NONNULL)
+        .addModifiers(Modifier.PUBLIC)
+        .addParameter(ParameterSpec
+            .builder(TypeName.BOOLEAN, "autoPersistQueries", Modifier.FINAL)
+            .build()
+        )
+        .addParameter(ParameterSpec
+            .builder(TypeName.BOOLEAN, "withQueryDocument", Modifier.FINAL)
+            .build()
+        )
+        .addParameter(ParameterSpec
+            .builder(ScalarTypeAdapters::class.java, "scalarTypeAdapters", Modifier.FINAL)
+            .addAnnotation(Annotations.NONNULL)
+            .build()
+        )
+        .returns(ByteString::class.java)
+        .addStatement("return \$T.compose(this, autoPersistQueries, withQueryDocument, scalarTypeAdapters)",
+            OperationRequestBodyComposer::class.java)
+        .build()
   }
 
   companion object {

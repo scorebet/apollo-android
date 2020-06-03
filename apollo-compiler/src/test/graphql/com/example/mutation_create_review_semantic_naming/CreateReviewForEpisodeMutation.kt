@@ -5,15 +5,21 @@
 //
 package com.example.mutation_create_review_semantic_naming
 
-import com.apollographql.apollo.api.InputFieldMarshaller
 import com.apollographql.apollo.api.Mutation
 import com.apollographql.apollo.api.Operation
 import com.apollographql.apollo.api.OperationName
+import com.apollographql.apollo.api.Response
 import com.apollographql.apollo.api.ResponseField
-import com.apollographql.apollo.api.ResponseFieldMapper
-import com.apollographql.apollo.api.ResponseFieldMarshaller
-import com.apollographql.apollo.api.ResponseReader
-import com.apollographql.apollo.internal.QueryDocumentMinifier
+import com.apollographql.apollo.api.ScalarTypeAdapters
+import com.apollographql.apollo.api.ScalarTypeAdapters.Companion.DEFAULT
+import com.apollographql.apollo.api.internal.InputFieldMarshaller
+import com.apollographql.apollo.api.internal.OperationRequestBodyComposer
+import com.apollographql.apollo.api.internal.QueryDocumentMinifier
+import com.apollographql.apollo.api.internal.ResponseFieldMapper
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller
+import com.apollographql.apollo.api.internal.ResponseReader
+import com.apollographql.apollo.api.internal.SimpleOperationResponseParser
+import com.apollographql.apollo.api.internal.Throws
 import com.example.mutation_create_review_semantic_naming.type.Episode
 import com.example.mutation_create_review_semantic_naming.type.ReviewInput
 import kotlin.Any
@@ -23,6 +29,10 @@ import kotlin.String
 import kotlin.Suppress
 import kotlin.collections.Map
 import kotlin.jvm.Transient
+import okio.Buffer
+import okio.BufferedSource
+import okio.ByteString
+import okio.IOException
 
 @Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
     "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
@@ -34,13 +44,13 @@ data class CreateReviewForEpisodeMutation(
   @Transient
   private val variables: Operation.Variables = object : Operation.Variables() {
     override fun valueMap(): Map<String, Any?> = mutableMapOf<String, Any?>().apply {
-      this["ep"] = ep
-      this["review"] = review
+      this["ep"] = this@CreateReviewForEpisodeMutation.ep
+      this["review"] = this@CreateReviewForEpisodeMutation.review
     }
 
-    override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller { writer ->
-      writer.writeString("ep", ep.rawValue)
-      writer.writeObject("review", review.marshaller())
+    override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller.invoke { writer ->
+      writer.writeString("ep", this@CreateReviewForEpisodeMutation.ep.rawValue)
+      writer.writeObject("review", this@CreateReviewForEpisodeMutation.review.marshaller())
     }
   }
 
@@ -49,12 +59,44 @@ data class CreateReviewForEpisodeMutation(
   override fun wrapData(data: Data?): Data? = data
   override fun variables(): Operation.Variables = variables
   override fun name(): OperationName = OPERATION_NAME
-  override fun responseFieldMapper(): ResponseFieldMapper<Data> = ResponseFieldMapper {
+  override fun responseFieldMapper(): ResponseFieldMapper<Data> = ResponseFieldMapper.invoke {
     Data(it)
   }
 
+  @Throws(IOException::class)
+  override fun parse(source: BufferedSource, scalarTypeAdapters: ScalarTypeAdapters): Response<Data>
+      = SimpleOperationResponseParser.parse(source, this, scalarTypeAdapters)
+
+  @Throws(IOException::class)
+  override fun parse(byteString: ByteString, scalarTypeAdapters: ScalarTypeAdapters): Response<Data>
+      = parse(Buffer().write(byteString), scalarTypeAdapters)
+
+  @Throws(IOException::class)
+  override fun parse(source: BufferedSource): Response<Data> = parse(source, DEFAULT)
+
+  @Throws(IOException::class)
+  override fun parse(byteString: ByteString): Response<Data> = parse(byteString, DEFAULT)
+
+  override fun composeRequestBody(scalarTypeAdapters: ScalarTypeAdapters): ByteString =
+      OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = false,
+    withQueryDocument = true,
+    scalarTypeAdapters = scalarTypeAdapters
+  )
+
+  override fun composeRequestBody(): ByteString = OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = false,
+    withQueryDocument = true,
+    scalarTypeAdapters = DEFAULT
+  )
+
+  /**
+   * Represents a review for a movie
+   */
   data class CreateReview(
-    val __typename: String,
+    val __typename: String = "Review",
     /**
      * The number of stars this review gave, 1-5
      */
@@ -64,10 +106,10 @@ data class CreateReviewForEpisodeMutation(
      */
     val commentary: String?
   ) {
-    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeString(RESPONSE_FIELDS[0], __typename)
-      it.writeInt(RESPONSE_FIELDS[1], stars)
-      it.writeString(RESPONSE_FIELDS[2], commentary)
+    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeString(RESPONSE_FIELDS[0], this@CreateReview.__typename)
+      writer.writeInt(RESPONSE_FIELDS[1], this@CreateReview.stars)
+      writer.writeString(RESPONSE_FIELDS[2], this@CreateReview.commentary)
     }
 
     companion object {
@@ -77,24 +119,30 @@ data class CreateReviewForEpisodeMutation(
           ResponseField.forString("commentary", "commentary", null, true, null)
           )
 
-      operator fun invoke(reader: ResponseReader): CreateReview {
-        val __typename = reader.readString(RESPONSE_FIELDS[0])
-        val stars = reader.readInt(RESPONSE_FIELDS[1])
-        val commentary = reader.readString(RESPONSE_FIELDS[2])
-        return CreateReview(
+      operator fun invoke(reader: ResponseReader): CreateReview = reader.run {
+        val __typename = readString(RESPONSE_FIELDS[0])!!
+        val stars = readInt(RESPONSE_FIELDS[1])!!
+        val commentary = readString(RESPONSE_FIELDS[2])
+        CreateReview(
           __typename = __typename,
           stars = stars,
           commentary = commentary
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<CreateReview> = ResponseFieldMapper { invoke(it) }
     }
   }
 
+  /**
+   * Data from the response after executing this GraphQL operation
+   */
   data class Data(
     val createReview: CreateReview?
   ) : Operation.Data {
-    override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeObject(RESPONSE_FIELDS[0], createReview?.marshaller())
+    override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeObject(RESPONSE_FIELDS[0], this@Data.createReview?.marshaller())
     }
 
     companion object {
@@ -108,15 +156,17 @@ data class CreateReviewForEpisodeMutation(
               "variableName" to "review")), true, null)
           )
 
-      operator fun invoke(reader: ResponseReader): Data {
-        val createReview = reader.readObject<CreateReview>(RESPONSE_FIELDS[0]) { reader ->
+      operator fun invoke(reader: ResponseReader): Data = reader.run {
+        val createReview = readObject<CreateReview>(RESPONSE_FIELDS[0]) { reader ->
           CreateReview(reader)
         }
-
-        return Data(
+        Data(
           createReview = createReview
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<Data> = ResponseFieldMapper { invoke(it) }
     }
   }
 
@@ -136,6 +186,8 @@ data class CreateReviewForEpisodeMutation(
           """.trimMargin()
         )
 
-    val OPERATION_NAME: OperationName = OperationName { "CreateReviewForEpisode" }
+    val OPERATION_NAME: OperationName = object : OperationName {
+      override fun name(): String = "CreateReviewForEpisode"
+    }
   }
 }

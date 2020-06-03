@@ -1,50 +1,73 @@
-apply(plugin = "groovy")
-apply(plugin = "idea")
-apply(plugin = "java-gradle-plugin")
-
-withConvention(JavaPluginConvention::class) {
-  sourceSets.named("main").get().java.srcDirs()
-  sourceSets.named("main").get().withConvention(GroovySourceSet::class) {
-    groovy.srcDirs("src/main/java", "src/main/groovy")
-  }
+plugins {
+  id("java")
+  id("org.jetbrains.kotlin.jvm")
+  id("java-gradle-plugin")
+  id("com.gradle.plugin-publish") version "0.11.0"
 }
 
-configurations {
-  create("fixtureClasspath")
+// groovy strings with double quotes are GString.
+// groovy strings with single quotes are java.lang.String
+// In all cases, gradle APIs take Any so just feed them whatever is returned
+fun dep(key: String) = (extra["dep"] as Map<*, *>)[key]!!
+
+fun Any.dot(key: String): Any {
+  return (this as Map<String, *>)[key]!!
 }
 
 dependencies {
-  add("compileOnly", groovy.util.Eval.x(project, "x.dep.android.plugin"))
-  add("compileOnly", gradleApi())
+  compileOnly(gradleApi())
+  compileOnly(dep("kotlin").dot("plugin"))
+  compileOnly(dep("android").dot("minPlugin"))
 
-  add("implementation", localGroovy())
-  add("implementation", project(":apollo-compiler"))
-  add("implementation", groovy.util.Eval.x(project, "x.dep.guavaJre"))
-  add("implementation", groovy.util.Eval.x(project, "x.dep.moshi.moshi"))
-
-  add("testImplementation", groovy.util.Eval.x(project, "x.dep.android.plugin"))
-  add("testImplementation", groovy.util.Eval.x(project, "x.dep.junit"))
-  add("testImplementation", groovy.util.Eval.x(project, "x.dep.spock").toString()) {
-    exclude( module= "groovy-all")
-  }
-  add("fixtureClasspath", groovy.util.Eval.x(project, "x.dep.android.plugin"))
-}
-
-// Inspired by: https://github.com/square/sqldelight/blob/83145b28cbdd949e98e87819299638074bd21147/sqldelight-gradle-plugin/build.gradle#L18
-// Append any extra dependencies to the test fixtures via a custom configuration classpath. This
-// allows us to apply additional plugins in a fixture while still leveraging dependency resolution
-// and de-duplication semantics.
-tasks.withType<PluginUnderTestMetadata> {
-  getPluginClasspath().from(configurations.named("fixtureClasspath"))
-}
-
-apply {
-  from(rootProject.file("gradle/gradle-mvn-push.gradle"))
-}
-apply {
-  from(rootProject.file("gradle/bintray.gradle"))
+  api(project(":apollo-compiler"))
+  implementation(dep("kotlin").dot("stdLib"))
+  implementation(dep("okHttp").dot("okHttp4"))
+  implementation(dep("moshi").dot("moshi"))
+  
+  testImplementation(dep("junit"))
+  testImplementation(dep("okHttp").dot("mockWebServer4"))
 }
 
 tasks.withType<Test> {
-  jvmArgs("-Xmx512m")
+  dependsOn(":apollo-api:publishAllPublicationsToPluginTestRepository")
+  dependsOn(":apollo-compiler:publishAllPublicationsToPluginTestRepository")
+  dependsOn("publishAllPublicationsToPluginTestRepository")
+
+  inputs.dir("src/test/files")
+}
+
+pluginBundle {
+  website = "https://github.com/apollographql/apollo-android"
+  vcsUrl = "https://github.com/apollographql/apollo-android"
+  tags = listOf("graphql", "apollo", "apollographql", "kotlin", "java", "jvm", "android", "graphql-client")
+}
+
+gradlePlugin {
+  plugins {
+    create("apolloGradlePlugin") {
+      id = "com.apollographql.apollo"
+      displayName = "Apollo-Android GraphQL client plugin."
+      description = "Automatically generates typesafe java and kotlin models from your GraphQL files."
+      implementationClass = "com.apollographql.apollo.gradle.internal.ApolloPlugin"
+    }
+  }
+}
+
+/**
+ * This is so that the plugin marker pom contains a <scm> tag
+ * It was recommended by the Gradle support team.
+ */
+configure<PublishingExtension> {
+  publications.configureEach {
+    if (name == "apolloGradlePluginPluginMarkerMaven") {
+      this as MavenPublication
+      pom {
+        scm {
+          url.set(findProperty("POM_SCM_URL") as String?)
+          connection.set(findProperty("POM_SCM_CONNECTION") as String?)
+          developerConnection.set(findProperty("POM_SCM_DEV_CONNECTION") as String?)
+        }
+      }
+    }
+  }
 }

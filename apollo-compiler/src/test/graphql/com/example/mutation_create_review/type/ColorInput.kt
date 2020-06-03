@@ -6,8 +6,8 @@
 package com.example.mutation_create_review.type
 
 import com.apollographql.apollo.api.Input
-import com.apollographql.apollo.api.InputFieldMarshaller
 import com.apollographql.apollo.api.InputType
+import com.apollographql.apollo.api.internal.InputFieldMarshaller
 import kotlin.Double
 import kotlin.Int
 import kotlin.Suppress
@@ -17,7 +17,7 @@ import kotlin.Suppress
  */
 @Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
     "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
-data class ColorInput(
+internal data class ColorInput(
   /**
    * Red color
    */
@@ -39,13 +39,18 @@ data class ColorInput(
    */
   val reviewRefInput: Input<ReviewRefInput> = Input.absent()
 ) : InputType {
-  override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller { writer ->
-    writer.writeInt("red", red)
-    if (green.defined) writer.writeDouble("green", green.value)
-    writer.writeDouble("blue", blue)
-    if (enumWithDefaultValue.defined) writer.writeString("enumWithDefaultValue",
-        enumWithDefaultValue.value?.rawValue)
-    if (reviewRefInput.defined) writer.writeObject("reviewRefInput",
-        reviewRefInput.value?.marshaller())
+  override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller.invoke { writer ->
+    writer.writeInt("red", this@ColorInput.red)
+    if (this@ColorInput.green.defined) {
+      writer.writeDouble("green", this@ColorInput.green.value)
+    }
+    writer.writeDouble("blue", this@ColorInput.blue)
+    if (this@ColorInput.enumWithDefaultValue.defined) {
+      writer.writeString("enumWithDefaultValue",
+          this@ColorInput.enumWithDefaultValue.value?.rawValue)
+    }
+    if (this@ColorInput.reviewRefInput.defined) {
+      writer.writeObject("reviewRefInput", this@ColorInput.reviewRefInput.value?.marshaller())
+    }
   }
 }

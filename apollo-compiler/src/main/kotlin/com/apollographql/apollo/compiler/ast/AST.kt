@@ -30,7 +30,7 @@ internal sealed class FieldType {
 
   data class Object(val typeRef: TypeRef) : FieldType()
 
-  data class InlineFragment(val typeRef: TypeRef, val fragmentRefs: List<TypeRef>) : FieldType()
+  data class Fragment(val typeRef: TypeRef) : FieldType()
 
   data class Array(val rawType: FieldType, val isOptional: Boolean) : FieldType()
 }
@@ -39,6 +39,7 @@ internal data class OperationType(
     val name: String,
     val type: Type,
     val operationName: String,
+    val description: String,
     val operationId: String,
     val queryDocument: String,
     val variables: InputType,
@@ -54,6 +55,7 @@ internal data class OperationType(
 internal data class ObjectType(
     val name: String,
     val schemaTypeName: String,
+    val description: String,
     val fields: List<Field>,
     val fragmentsType: ObjectType?,
     val kind: Kind,
@@ -65,9 +67,9 @@ internal data class ObjectType(
 
     object InlineFragmentSuper : Kind()
 
-    class InlineFragment(val superInterface: TypeRef, val possibleTypes: List<String>) : Kind()
+    data class InlineFragment(val superInterface: TypeRef, val possibleTypes: List<String>) : Kind()
 
-    class Fragment(val definition: String, val possibleTypes: List<String>) : Kind()
+    data class Fragment(val definition: String, val possibleTypes: List<String>) : Kind()
   }
 
   data class Field(
@@ -84,7 +86,7 @@ internal data class ObjectType(
   ) {
     sealed class Condition {
       data class Directive(val variableName: String, val inverted: Boolean) : Condition()
-      data class Type(val type: String) : Condition()
+      data class Type(val types: List<String>) : Condition()
     }
   }
 }

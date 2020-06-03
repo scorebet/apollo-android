@@ -1,6 +1,11 @@
 package com.apollographql.apollo.compiler.ast.builder
 
-import com.apollographql.apollo.compiler.ast.*
+import com.apollographql.apollo.compiler.OperationIdGenerator
+import com.apollographql.apollo.compiler.ast.CustomTypes
+import com.apollographql.apollo.compiler.ast.EnumType
+import com.apollographql.apollo.compiler.ast.FieldType
+import com.apollographql.apollo.compiler.ast.Schema
+import com.apollographql.apollo.compiler.ast.TypeRef
 import com.apollographql.apollo.compiler.escapeKotlinReservedWord
 import com.apollographql.apollo.compiler.ir.CodeGenerationIR
 import com.apollographql.apollo.compiler.ir.ScalarType
@@ -10,7 +15,8 @@ internal fun CodeGenerationIR.ast(
     customTypeMap: CustomTypes,
     typesPackageName: String,
     fragmentsPackage: String,
-    useSemanticNaming: Boolean
+    useSemanticNaming: Boolean,
+    operationIdGenerator: OperationIdGenerator
 ): Schema {
   val enums = typesUsed.filter { it.kind == TypeDeclaration.KIND_ENUM }.map { it.ast() }
   val inputTypes = typesUsed.filter { it.kind == TypeDeclaration.KIND_INPUT_OBJECT_TYPE }.map {
@@ -24,7 +30,6 @@ internal fun CodeGenerationIR.ast(
   val fragments = fragments.map {
     it.ast(
         Context(
-            reservedObjectTypeRef = null,
             customTypeMap = customTypeMap,
             enums = enums,
             typesPackageName = typesPackageName,
@@ -37,14 +42,13 @@ internal fun CodeGenerationIR.ast(
     operation.ast(
         operationClassName = operation.normalizedOperationName(useSemanticNaming).capitalize(),
         context = Context(
-            reservedObjectTypeRef = TypeRef(
-                name = operation.normalizedOperationName(useSemanticNaming).capitalize()),
             customTypeMap = customTypeMap,
             enums = enums,
             typesPackageName = typesPackageName,
             fragmentsPackage = fragmentsPackage,
             fragments = irFragments
-        )
+        ),
+        operationIdGenerator = operationIdGenerator
     )
   }
   return Schema(
@@ -79,28 +83,31 @@ internal fun resolveFieldType(
       is ScalarType.INT -> FieldType.Scalar.Int
       is ScalarType.BOOLEAN -> FieldType.Scalar.Boolean
       is ScalarType.FLOAT -> FieldType.Scalar.Float
-      else -> when {
-        enums.find { it.name == graphQLType.removeSuffix("!") } != null -> FieldType.Scalar.Enum(
-            TypeRef(
-                name = graphQLType.removeSuffix("!").capitalize().escapeKotlinReservedWord(),
-                packageName = typesPackageName
-            )
-        )
-        customTypeMap.containsKey(graphQLType.removeSuffix("!")) -> FieldType.Scalar.Custom(
-            schemaType = graphQLType.removeSuffix("!"),
-            mappedType = customTypeMap.getValue(graphQLType.removeSuffix("!")),
-            customEnumConst = graphQLType.removeSuffix("!").toUpperCase().escapeKotlinReservedWord(),
-            customEnumType = TypeRef(
-                name = "CustomType",
-                packageName = typesPackageName
-            )
-        )
-        else -> FieldType.Object(
-            TypeRef(
-                name = graphQLType.removeSuffix("!").capitalize().escapeKotlinReservedWord(),
-                packageName = typesPackageName
-            )
-        )
+      else -> {
+        val normalizedName = graphQLType.removeSuffix("!").capitalize().escapeKotlinReservedWord()
+        when {
+          enums.find { it.name == normalizedName } != null -> FieldType.Scalar.Enum(
+              TypeRef(
+                  name =  normalizedName,
+                  packageName = typesPackageName
+              )
+          )
+          customTypeMap.containsKey(graphQLType.removeSuffix("!")) -> FieldType.Scalar.Custom(
+              schemaType = graphQLType.removeSuffix("!"),
+              mappedType = customTypeMap.getValue(graphQLType.removeSuffix("!")),
+              customEnumConst = normalizedName.toUpperCase(),
+              customEnumType = TypeRef(
+                  name = "CustomType",
+                  packageName = typesPackageName
+              )
+          )
+          else -> FieldType.Object(
+              TypeRef(
+                  name = normalizedName,
+                  packageName = typesPackageName
+              )
+          )
+        }
       }
     }
   }

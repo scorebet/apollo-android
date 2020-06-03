@@ -1,19 +1,23 @@
 package com.apollographql.apollo.compiler.ast.builder
 
-import com.apollographql.apollo.compiler.ast.*
+import com.apollographql.apollo.api.internal.QueryDocumentMinifier
+import com.apollographql.apollo.compiler.OperationIdGenerator
+import com.apollographql.apollo.compiler.ast.InputType
+import com.apollographql.apollo.compiler.ast.ObjectType
+import com.apollographql.apollo.compiler.ast.OperationType
 import com.apollographql.apollo.compiler.escapeKotlinReservedWord
 import com.apollographql.apollo.compiler.ir.Operation
-import com.apollographql.apollo.compiler.sha256
-import com.apollographql.apollo.internal.QueryDocumentMinifier
 
 internal fun Operation.ast(
     operationClassName: String,
-    context: Context
+    context: Context,
+    operationIdGenerator: OperationIdGenerator
 ): OperationType {
   val dataTypeRef = context.registerObjectType(
       name = "Data",
       schemaTypeName = "",
-      fragmentSpreads = emptyList(),
+      description = "Data from the response after executing this GraphQL operation",
+      fragmentRefs = emptyList(),
       inlineFragments = emptyList(),
       fields = fields,
       singularize = false,
@@ -25,11 +29,15 @@ internal fun Operation.ast(
     isSubscription() -> OperationType.Type.SUBSCRIPTION
     else -> throw IllegalArgumentException("Unsupported GraphQL operation type: $operationType")
   }
+
+  val operationId = operationIdGenerator.apply(QueryDocumentMinifier.minify(sourceWithFragments), filePath)
+
   return OperationType(
       name = operationClassName,
       type = operationType,
       operationName = operationName,
-      operationId = QueryDocumentMinifier.minify(sourceWithFragments).sha256(),
+      description = description,
+      operationId = operationId,
       queryDocument = sourceWithFragments,
       variables = InputType(
           name = "Variables",

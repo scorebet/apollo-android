@@ -9,21 +9,21 @@ import javax.lang.model.element.Modifier
 data class Operation(
     val operationName: String,
     val operationType: String,
+    val description: String,
     val variables: List<Variable>,
     val source: String,
     val sourceWithFragments: String,
     val fields: List<Field>,
     val filePath: String,
-    val fragmentsReferenced: List<String>,
-    val operationId: String
-
+    val fragmentsReferenced: List<String>
 ) : CodeGenerator {
 
   override fun toTypeSpec(context: CodeGenerationContext, abstract: Boolean): TypeSpec =
       SchemaTypeSpecBuilder(
           typeName = DATA_TYPE_NAME,
+          description = "Data from the response after executing this GraphQL operation",
           fields = fields,
-          fragmentSpreads = emptyList(),
+          fragmentRefs = emptyList(),
           inlineFragments = emptyList(),
           context = context,
           abstract = abstract
@@ -62,9 +62,9 @@ data class Operation(
   fun isSubscription() = operationType == TYPE_SUBSCRIPTION
 
   companion object {
-    val DATA_TYPE_NAME = "Data"
-    val TYPE_MUTATION = "mutation"
-    val TYPE_QUERY = "query"
-    val TYPE_SUBSCRIPTION = "subscription"
+    const val DATA_TYPE_NAME = "Data"
+    const val TYPE_MUTATION = "mutation"
+    const val TYPE_QUERY = "query"
+    const val TYPE_SUBSCRIPTION = "subscription"
   }
 }

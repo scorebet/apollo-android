@@ -1,12 +1,13 @@
 package com.apollographql.apollo;
 
-import com.google.common.base.Charsets;
-import com.google.common.base.Function;
-import com.google.common.collect.FluentIterable;
-
+import com.apollographql.apollo.api.CustomTypeAdapter;
+import com.apollographql.apollo.api.CustomTypeValue;
 import com.apollographql.apollo.api.Error;
 import com.apollographql.apollo.api.Input;
+import com.apollographql.apollo.api.OperationDataJsonSerializer;
 import com.apollographql.apollo.api.Response;
+import com.apollographql.apollo.api.ScalarType;
+import com.apollographql.apollo.api.ScalarTypeAdapters;
 import com.apollographql.apollo.cache.normalized.lru.EvictionPolicy;
 import com.apollographql.apollo.cache.normalized.lru.LruNormalizedCacheFactory;
 import com.apollographql.apollo.exception.ApolloException;
@@ -16,19 +17,23 @@ import com.apollographql.apollo.integration.httpcache.AllPlanetsQuery;
 import com.apollographql.apollo.integration.httpcache.type.CustomType;
 import com.apollographql.apollo.integration.normalizer.EpisodeHeroNameQuery;
 import com.apollographql.apollo.integration.normalizer.HeroNameQuery;
-import com.apollographql.apollo.internal.json.JsonWriter;
-import com.apollographql.apollo.response.CustomTypeAdapter;
-import com.apollographql.apollo.response.CustomTypeValue;
-import com.apollographql.apollo.response.OperationJsonWriter;
+import com.apollographql.apollo.http.OkHttpExecutionContext;
 import com.apollographql.apollo.response.OperationResponseParser;
-import com.apollographql.apollo.response.ScalarTypeAdapters;
 import com.apollographql.apollo.rx2.Rx2Apollo;
-
+import com.google.common.base.Charsets;
+import com.google.common.base.Function;
+import com.google.common.collect.FluentIterable;
+import io.reactivex.functions.Predicate;
+import okhttp3.Dispatcher;
+import okhttp3.OkHttpClient;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import okio.Buffer;
+import org.jetbrains.annotations.NotNull;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
-import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.text.ParseException;
@@ -40,15 +45,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
-import org.jetbrains.annotations.NotNull;
-
-import io.reactivex.functions.Predicate;
-import okhttp3.Dispatcher;
-import okhttp3.OkHttpClient;
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
-import okio.Buffer;
-
+import static com.apollographql.apollo.integration.normalizer.type.Episode.EMPIRE;
 import static com.apollographql.apollo.integration.normalizer.type.Episode.JEDI;
 import static com.google.common.truth.Truth.assertThat;
 
@@ -59,7 +56,8 @@ public class IntegrationTest {
   private ApolloClient apolloClient;
   private CustomTypeAdapter<Date> dateCustomTypeAdapter;
 
-  @Rule public final MockWebServer server = new MockWebServer();
+  @Rule
+  public final MockWebServer server = new MockWebServer();
 
   @Before public void setUp() {
     dateCustomTypeAdapter = new CustomTypeAdapter<Date>() {
@@ -153,7 +151,7 @@ public class IntegrationTest {
           @Override public boolean test(Response<AllPlanetsQuery.Data> response) throws Exception {
             assertThat(response.hasErrors()).isTrue();
             assertThat(response.errors()).hasSize(1);
-            assertThat(response.errors().get(0).message()).isNull();
+            assertThat(response.errors().get(0).message()).isEqualTo("");
             assertThat(response.errors().get(0).customAttributes()).hasSize(2);
             assertThat(response.errors().get(0).customAttributes().get("code")).isEqualTo("userNotFound");
             assertThat(response.errors().get(0).customAttributes().get("path")).isEqualTo("loginWithPassword");
@@ -272,20 +270,98 @@ public class IntegrationTest {
   }
 
   @Test public void operationJsonWriter() throws Exception {
-    String json = Utils.INSTANCE.readFileToString(getClass(), "/OperationJsonWriter.json");
-
+    String expected = Utils.INSTANCE.readFileToString(getClass(), "/OperationJsonWriter.json");
     AllPlanetsQuery query = new AllPlanetsQuery();
-    Response<AllPlanetsQuery.Data> response = new OperationResponseParser<>(query, query.responseFieldMapper(), new ScalarTypeAdapters(Collections.EMPTY_MAP))
-        .parse(new Buffer().writeUtf8(json));
+    Response<AllPlanetsQuery.Data> response = new OperationResponseParser<>(query, query.responseFieldMapper(), ScalarTypeAdapters.DEFAULT)
+        .parse(new Buffer().writeUtf8(expected));
 
-    Buffer buffer = new Buffer();
-    OperationJsonWriter writer = new OperationJsonWriter(response.data(), new ScalarTypeAdapters(Collections.EMPTY_MAP));
+    String actual = OperationDataJsonSerializer.serialize(response.data(), "  ");
+    assertThat(actual).isEqualTo(expected);
+  }
 
-    JsonWriter jsonWriter = JsonWriter.of(buffer);
-    jsonWriter.setIndent("  ");
-    writer.write(jsonWriter);
+  @Test public void parseSuccessOperationRawResponse() throws Exception {
+    final AllPlanetsQuery query = new AllPlanetsQuery();
+    final Response<AllPlanetsQuery.Data> response = query.parse(
+        new Buffer().readFrom(getClass().getResourceAsStream("/AllPlanetsNullableField.json")),
+        new ScalarTypeAdapters(Collections.<ScalarType, CustomTypeAdapter<?>>emptyMap())
+    );
 
-    assertThat(buffer.readUtf8()).isEqualTo(json);
+    assertThat(response.operation()).isEqualTo(query);
+    assertThat(response.hasErrors()).isFalse();
+    assertThat(response.data()).isNotNull();
+    assertThat(response.data().allPlanets().planets()).isNotEmpty();
+  }
+
+  @Test public void parseErrorOperationRawResponse() throws Exception {
+    final EpisodeHeroNameQuery query = new EpisodeHeroNameQuery(Input.fromNullable(EMPIRE));
+    final Response<EpisodeHeroNameQuery.Data> response = query.parse(
+        new Buffer().readFrom(getClass().getResourceAsStream("/ResponseErrorWithData.json")),
+        new ScalarTypeAdapters(Collections.<ScalarType, CustomTypeAdapter<?>>emptyMap())
+    );
+
+    assertThat(response.data()).isNotNull();
+    assertThat(response.data().hero()).isNotNull();
+    assertThat(response.data().hero().name()).isEqualTo("R2-D2");
+    assertThat(response.errors()).containsExactly(
+        new Error(
+            "Cannot query field \"names\" on type \"Species\".",
+            Collections.singletonList(new Error.Location(3, 5)),
+            Collections.<String, Object>emptyMap()
+        )
+    );
+  }
+
+  @Test public void writeOperationRawRequest() throws Exception {
+    final EpisodeHeroNameQuery query = new EpisodeHeroNameQuery(Input.fromNullable(EMPIRE));
+
+    final String payload = "{" +
+        "\"operationName\": " + query.name().name() + ", " +
+        "\"query\": " + query.queryDocument() + ", " +
+        "\"variables\": " + query.variables().marshal() +
+        "}";
+
+    assertThat(payload).isEqualTo("{\"operationName\": EpisodeHeroName, \"query\": query EpisodeHeroName($episode: Episode) { hero(episode: $episode) { __typename name } }, \"variables\": {\"episode\":\"EMPIRE\"}}");
+  }
+
+  @SuppressWarnings("ConstantConditions")
+  @Test public void operationResponseParserParseResponseWithExtensions() throws Exception {
+    final Buffer source = new Buffer().readFrom(getClass().getResourceAsStream("/HeroNameResponse.json"));
+
+    final HeroNameQuery query = new HeroNameQuery();
+    final Response<HeroNameQuery.Data> response = new OperationResponseParser<>(query, query.responseFieldMapper(),
+        new ScalarTypeAdapters(Collections.<ScalarType, CustomTypeAdapter<?>>emptyMap())).parse(source);
+
+    assertThat(response.extensions().toString()).isEqualTo("{cost={requestedQueryCost=3, actualQueryCost=3, throttleStatus={maximumAvailable=1000, currentlyAvailable=997, restoreRate=50}}}");
+  }
+
+  @SuppressWarnings("ConstantConditions")
+  @Test public void operationParseResponseWithExtensions() throws Exception {
+    final Buffer source = new Buffer().readFrom(getClass().getResourceAsStream("/HeroNameResponse.json"));
+    final Response<HeroNameQuery.Data> response = new HeroNameQuery().parse(source);
+    assertThat(response.extensions().toString()).isEqualTo("{cost={requestedQueryCost=3, actualQueryCost=3, throttleStatus={maximumAvailable=1000, currentlyAvailable=997, restoreRate=50}}}");
+  }
+
+  @SuppressWarnings("ConstantConditions")
+  @Test public void operationResponseContainsHttpExecutionContext() throws Exception {
+    final MockResponse httpResponse = mockResponse("HttpCacheTestAllPlanets.json")
+        .setHeader("Header1", "Header1#value")
+        .setHeader("Header2", "Header2#value");
+    server.enqueue(httpResponse);
+    assertResponse(
+        apolloClient.query(new AllPlanetsQuery()),
+        (Predicate<Response<AllPlanetsQuery.Data>>) response -> {
+          assertThat(response.getExecutionContext().get(OkHttpExecutionContext.KEY)).isNotNull();
+          assertThat(response.getExecutionContext().get(OkHttpExecutionContext.KEY).getResponse()).isNotNull();
+          assertThat(response.getExecutionContext().get(OkHttpExecutionContext.KEY).getResponse().headers().toString())
+              .isEqualTo(
+                  "Transfer-encoding: chunked\n" +
+                      "Header1: Header1#value\n" +
+                      "Header2: Header2#value\n"
+              );
+          assertThat(response.getExecutionContext().get(OkHttpExecutionContext.KEY).getResponse().body()).isNull();
+          return true;
+        }
+    );
   }
 
   private MockResponse mockResponse(String fileName) throws IOException {

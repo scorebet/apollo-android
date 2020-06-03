@@ -5,24 +5,35 @@
 //
 package com.example.starships
 
-import com.apollographql.apollo.api.InputFieldMarshaller
 import com.apollographql.apollo.api.Operation
 import com.apollographql.apollo.api.OperationName
 import com.apollographql.apollo.api.Query
+import com.apollographql.apollo.api.Response
 import com.apollographql.apollo.api.ResponseField
-import com.apollographql.apollo.api.ResponseFieldMapper
-import com.apollographql.apollo.api.ResponseFieldMarshaller
-import com.apollographql.apollo.api.ResponseReader
-import com.apollographql.apollo.internal.QueryDocumentMinifier
+import com.apollographql.apollo.api.ScalarTypeAdapters
+import com.apollographql.apollo.api.ScalarTypeAdapters.Companion.DEFAULT
+import com.apollographql.apollo.api.internal.InputFieldMarshaller
+import com.apollographql.apollo.api.internal.OperationRequestBodyComposer
+import com.apollographql.apollo.api.internal.QueryDocumentMinifier
+import com.apollographql.apollo.api.internal.ResponseFieldMapper
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller
+import com.apollographql.apollo.api.internal.ResponseReader
+import com.apollographql.apollo.api.internal.SimpleOperationResponseParser
+import com.apollographql.apollo.api.internal.Throws
 import com.example.starships.type.CustomType
 import kotlin.Any
 import kotlin.Array
+import kotlin.Boolean
 import kotlin.Double
 import kotlin.String
 import kotlin.Suppress
 import kotlin.collections.List
 import kotlin.collections.Map
 import kotlin.jvm.Transient
+import okio.Buffer
+import okio.BufferedSource
+import okio.ByteString
+import okio.IOException
 
 @Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
     "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
@@ -32,11 +43,11 @@ data class TestQuery(
   @Transient
   private val variables: Operation.Variables = object : Operation.Variables() {
     override fun valueMap(): Map<String, Any?> = mutableMapOf<String, Any?>().apply {
-      this["id"] = id
+      this["id"] = this@TestQuery.id
     }
 
-    override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller { writer ->
-      writer.writeCustom("id", CustomType.ID, id)
+    override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller.invoke { writer ->
+      writer.writeCustom("id", CustomType.ID, this@TestQuery.id)
     }
   }
 
@@ -45,12 +56,52 @@ data class TestQuery(
   override fun wrapData(data: Data?): Data? = data
   override fun variables(): Operation.Variables = variables
   override fun name(): OperationName = OPERATION_NAME
-  override fun responseFieldMapper(): ResponseFieldMapper<Data> = ResponseFieldMapper {
+  override fun responseFieldMapper(): ResponseFieldMapper<Data> = ResponseFieldMapper.invoke {
     Data(it)
   }
 
+  @Throws(IOException::class)
+  override fun parse(source: BufferedSource, scalarTypeAdapters: ScalarTypeAdapters): Response<Data>
+      = SimpleOperationResponseParser.parse(source, this, scalarTypeAdapters)
+
+  @Throws(IOException::class)
+  override fun parse(byteString: ByteString, scalarTypeAdapters: ScalarTypeAdapters): Response<Data>
+      = parse(Buffer().write(byteString), scalarTypeAdapters)
+
+  @Throws(IOException::class)
+  override fun parse(source: BufferedSource): Response<Data> = parse(source, DEFAULT)
+
+  @Throws(IOException::class)
+  override fun parse(byteString: ByteString): Response<Data> = parse(byteString, DEFAULT)
+
+  override fun composeRequestBody(scalarTypeAdapters: ScalarTypeAdapters): ByteString =
+      OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = false,
+    withQueryDocument = true,
+    scalarTypeAdapters = scalarTypeAdapters
+  )
+
+  override fun composeRequestBody(): ByteString = OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = false,
+    withQueryDocument = true,
+    scalarTypeAdapters = DEFAULT
+  )
+
+  override fun composeRequestBody(
+    autoPersistQueries: Boolean,
+    withQueryDocument: Boolean,
+    scalarTypeAdapters: ScalarTypeAdapters
+  ): ByteString = OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = autoPersistQueries,
+    withQueryDocument = withQueryDocument,
+    scalarTypeAdapters = scalarTypeAdapters
+  )
+
   data class Starship(
-    val __typename: String,
+    val __typename: String = "Starship",
     /**
      * The ID of the starship
      */
@@ -61,16 +112,15 @@ data class TestQuery(
     val name: String,
     val coordinates: List<List<Double>>?
   ) {
-    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeString(RESPONSE_FIELDS[0], __typename)
-      it.writeCustom(RESPONSE_FIELDS[1] as ResponseField.CustomTypeField, id)
-      it.writeString(RESPONSE_FIELDS[2], name)
-      it.writeList(RESPONSE_FIELDS[3], coordinates) { value, listItemWriter ->
+    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeString(RESPONSE_FIELDS[0], this@Starship.__typename)
+      writer.writeCustom(RESPONSE_FIELDS[1] as ResponseField.CustomTypeField, this@Starship.id)
+      writer.writeString(RESPONSE_FIELDS[2], this@Starship.name)
+      writer.writeList(RESPONSE_FIELDS[3], this@Starship.coordinates) { value, listItemWriter ->
         value?.forEach { value ->
           listItemWriter.writeList(value) { value, listItemWriter ->
             value?.forEach { value ->
-              listItemWriter.writeDouble(value)
-            }
+              listItemWriter.writeDouble(value)}
           }
         }
       }
@@ -84,30 +134,36 @@ data class TestQuery(
           ResponseField.forList("coordinates", "coordinates", null, true, null)
           )
 
-      operator fun invoke(reader: ResponseReader): Starship {
-        val __typename = reader.readString(RESPONSE_FIELDS[0])
-        val id = reader.readCustomType<String>(RESPONSE_FIELDS[1] as ResponseField.CustomTypeField)
-        val name = reader.readString(RESPONSE_FIELDS[2])
-        val coordinates = reader.readList<List<Double>>(RESPONSE_FIELDS[3]) {
-          it.readList<Double> {
-            it.readDouble()
-          }
-        }
-        return Starship(
+      operator fun invoke(reader: ResponseReader): Starship = reader.run {
+        val __typename = readString(RESPONSE_FIELDS[0])!!
+        val id = readCustomType<String>(RESPONSE_FIELDS[1] as ResponseField.CustomTypeField)!!
+        val name = readString(RESPONSE_FIELDS[2])!!
+        val coordinates = readList<List<Double>>(RESPONSE_FIELDS[3]) { reader ->
+          reader.readList<Double> { reader ->
+            reader.readDouble()
+          }.map { it!! }
+        }?.map { it!! }
+        Starship(
           __typename = __typename,
           id = id,
           name = name,
           coordinates = coordinates
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<Starship> = ResponseFieldMapper { invoke(it) }
     }
   }
 
+  /**
+   * Data from the response after executing this GraphQL operation
+   */
   data class Data(
     val starship: Starship?
   ) : Operation.Data {
-    override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeObject(RESPONSE_FIELDS[0], starship?.marshaller())
+    override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeObject(RESPONSE_FIELDS[0], this@Data.starship?.marshaller())
     }
 
     companion object {
@@ -118,15 +174,17 @@ data class TestQuery(
               "variableName" to "id")), true, null)
           )
 
-      operator fun invoke(reader: ResponseReader): Data {
-        val starship = reader.readObject<Starship>(RESPONSE_FIELDS[0]) { reader ->
+      operator fun invoke(reader: ResponseReader): Data = reader.run {
+        val starship = readObject<Starship>(RESPONSE_FIELDS[0]) { reader ->
           Starship(reader)
         }
-
-        return Data(
+        Data(
           starship = starship
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<Data> = ResponseFieldMapper { invoke(it) }
     }
   }
 
@@ -147,6 +205,8 @@ data class TestQuery(
           """.trimMargin()
         )
 
-    val OPERATION_NAME: OperationName = OperationName { "TestQuery" }
+    val OPERATION_NAME: OperationName = object : OperationName {
+      override fun name(): String = "TestQuery"
+    }
   }
 }

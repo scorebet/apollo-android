@@ -7,8 +7,9 @@ package com.example.arguments_simple.fragment
 
 import com.apollographql.apollo.api.GraphqlFragment
 import com.apollographql.apollo.api.ResponseField
-import com.apollographql.apollo.api.ResponseFieldMarshaller
-import com.apollographql.apollo.api.ResponseReader
+import com.apollographql.apollo.api.internal.ResponseFieldMapper
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller
+import com.apollographql.apollo.api.internal.ResponseReader
 import kotlin.Array
 import kotlin.Int
 import kotlin.String
@@ -18,15 +19,15 @@ import kotlin.collections.List
 @Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
     "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
 data class HeroDetails(
-  val __typename: String,
+  val __typename: String = "Character",
   /**
    * The friends of the character exposed as a connection with edges
    */
   val friendsConnection: FriendsConnection
 ) : GraphqlFragment {
-  override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-    it.writeString(RESPONSE_FIELDS[0], __typename)
-    it.writeObject(RESPONSE_FIELDS[1], friendsConnection.marshaller())
+  override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+    writer.writeString(RESPONSE_FIELDS[0], this@HeroDetails.__typename)
+    writer.writeObject(RESPONSE_FIELDS[1], this@HeroDetails.friendsConnection.marshaller())
   }
 
   companion object {
@@ -55,61 +56,71 @@ data class HeroDetails(
         |}
         """.trimMargin()
 
-    val POSSIBLE_TYPES: Array<String> = arrayOf("Human", "Droid")
-
-    operator fun invoke(reader: ResponseReader): HeroDetails {
-      val __typename = reader.readString(RESPONSE_FIELDS[0])
-      val friendsConnection = reader.readObject<FriendsConnection>(RESPONSE_FIELDS[1]) { reader ->
+    operator fun invoke(reader: ResponseReader): HeroDetails = reader.run {
+      val __typename = readString(RESPONSE_FIELDS[0])!!
+      val friendsConnection = readObject<FriendsConnection>(RESPONSE_FIELDS[1]) { reader ->
         FriendsConnection(reader)
-      }
-
-      return HeroDetails(
+      }!!
+      HeroDetails(
         __typename = __typename,
         friendsConnection = friendsConnection
       )
     }
+
+    @Suppress("FunctionName")
+    fun Mapper(): ResponseFieldMapper<HeroDetails> = ResponseFieldMapper { invoke(it) }
   }
 
+  /**
+   * A character from the Star Wars universe
+   */
   data class Node(
-    val __typename: String,
+    val __typename: String = "Character",
     /**
      * The name of the character
      */
     val name: String?
   ) {
-    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeString(RESPONSE_FIELDS[0], __typename)
-      it.writeString(RESPONSE_FIELDS[1], name)
+    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeString(RESPONSE_FIELDS[0], this@Node.__typename)
+      writer.writeString(RESPONSE_FIELDS[1], this@Node.name)
     }
 
     companion object {
       private val RESPONSE_FIELDS: Array<ResponseField> = arrayOf(
           ResponseField.forString("__typename", "__typename", null, false, null),
-          ResponseField.forString("name", "name", null, true,
-              listOf(ResponseField.Condition.booleanCondition("IncludeName", false)))
+          ResponseField.forString("name", "name", null, true, listOf(
+            ResponseField.Condition.booleanCondition("IncludeName", false)
+          ))
           )
 
-      operator fun invoke(reader: ResponseReader): Node {
-        val __typename = reader.readString(RESPONSE_FIELDS[0])
-        val name = reader.readString(RESPONSE_FIELDS[1])
-        return Node(
+      operator fun invoke(reader: ResponseReader): Node = reader.run {
+        val __typename = readString(RESPONSE_FIELDS[0])!!
+        val name = readString(RESPONSE_FIELDS[1])
+        Node(
           __typename = __typename,
           name = name
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<Node> = ResponseFieldMapper { invoke(it) }
     }
   }
 
+  /**
+   * An edge object for a character's friends
+   */
   data class Edge(
-    val __typename: String,
+    val __typename: String = "FriendsEdge",
     /**
      * The character represented by this friendship edge
      */
     val node: Node?
   ) {
-    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeString(RESPONSE_FIELDS[0], __typename)
-      it.writeObject(RESPONSE_FIELDS[1], node?.marshaller())
+    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeString(RESPONSE_FIELDS[0], this@Edge.__typename)
+      writer.writeObject(RESPONSE_FIELDS[1], this@Edge.node?.marshaller())
     }
 
     companion object {
@@ -118,22 +129,27 @@ data class HeroDetails(
           ResponseField.forObject("node", "node", null, true, null)
           )
 
-      operator fun invoke(reader: ResponseReader): Edge {
-        val __typename = reader.readString(RESPONSE_FIELDS[0])
-        val node = reader.readObject<Node>(RESPONSE_FIELDS[1]) { reader ->
+      operator fun invoke(reader: ResponseReader): Edge = reader.run {
+        val __typename = readString(RESPONSE_FIELDS[0])!!
+        val node = readObject<Node>(RESPONSE_FIELDS[1]) { reader ->
           Node(reader)
         }
-
-        return Edge(
+        Edge(
           __typename = __typename,
           node = node
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<Edge> = ResponseFieldMapper { invoke(it) }
     }
   }
 
+  /**
+   * A connection object for a character's friends
+   */
   data class FriendsConnection(
-    val __typename: String,
+    val __typename: String = "FriendsConnection",
     /**
      * The total number of friends
      */
@@ -143,15 +159,16 @@ data class HeroDetails(
      */
     val edges: List<Edge?>?
   ) {
-    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeString(RESPONSE_FIELDS[0], __typename)
-      it.writeInt(RESPONSE_FIELDS[1], totalCount)
-      it.writeList(RESPONSE_FIELDS[2], edges) { value, listItemWriter ->
+    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeString(RESPONSE_FIELDS[0], this@FriendsConnection.__typename)
+      writer.writeInt(RESPONSE_FIELDS[1], this@FriendsConnection.totalCount)
+      writer.writeList(RESPONSE_FIELDS[2], this@FriendsConnection.edges) { value, listItemWriter ->
         value?.forEach { value ->
-          listItemWriter.writeObject(value?.marshaller())
-        }
+          listItemWriter.writeObject(value?.marshaller())}
       }
     }
+
+    fun edgesFilterNotNull(): List<Edge>? = edges?.filterNotNull()
 
     companion object {
       private val RESPONSE_FIELDS: Array<ResponseField> = arrayOf(
@@ -160,21 +177,23 @@ data class HeroDetails(
           ResponseField.forList("edges", "edges", null, true, null)
           )
 
-      operator fun invoke(reader: ResponseReader): FriendsConnection {
-        val __typename = reader.readString(RESPONSE_FIELDS[0])
-        val totalCount = reader.readInt(RESPONSE_FIELDS[1])
-        val edges = reader.readList<Edge>(RESPONSE_FIELDS[2]) {
-          it.readObject<Edge> { reader ->
+      operator fun invoke(reader: ResponseReader): FriendsConnection = reader.run {
+        val __typename = readString(RESPONSE_FIELDS[0])!!
+        val totalCount = readInt(RESPONSE_FIELDS[1])
+        val edges = readList<Edge>(RESPONSE_FIELDS[2]) { reader ->
+          reader.readObject<Edge> { reader ->
             Edge(reader)
           }
-
         }
-        return FriendsConnection(
+        FriendsConnection(
           __typename = __typename,
           totalCount = totalCount,
           edges = edges
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<FriendsConnection> = ResponseFieldMapper { invoke(it) }
     }
   }
 }

@@ -6,113 +6,75 @@ import com.apollographql.apollo.ApolloQueryWatcher
 import com.apollographql.apollo.ApolloSubscriptionCall
 import com.apollographql.apollo.api.Response
 import com.apollographql.apollo.exception.ApolloException
-import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 
-private class ChannelCallback<T>(val channel: Channel<Response<T>>) : ApolloCall.Callback<T>() {
-
-  override fun onResponse(response: Response<T>) {
-    channel.offer(response)
-  }
-
-  override fun onFailure(e: ApolloException) {
-    channel.close(e)
-  }
-
-  override fun onStatusEvent(event: ApolloCall.StatusEvent) {
-    if (event == ApolloCall.StatusEvent.COMPLETED) {
-      channel.close()
-    }
-  }
-}
-
-private fun checkCapacity(capacity: Int) {
-  when (capacity) {
-    Channel.UNLIMITED,
-    Channel.CONFLATED -> return
-    else ->
-      // Everything else than UNLIMITED or CONFLATED does not guarantee that channel.offer() succeeds all the time.
-      // We don't support these use cases for now
-      throw IllegalArgumentException("Bad channel capacity ($capacity). Only UNLIMITED and CONFLATED are supported")
-  }
-}
 
 /**
- * Converts an {@link ApolloCall} to an {@link kotlinx.coroutines.flow.Flow}.
+ * Converts an [ApolloCall] to an [Flow].
  *
  * @param <T>  the value type.
- * @param capacity the {@link Capacity} used for the underlying channel. Only {@link kotlinx.coroutines.channels.Channel.UNLIMITED}
- * and {@link kotlinx.coroutines.channels.Channel.CONFLATED} are supported at the moment
- * @throws IllegalArgumentException if capacity is not {@link kotlinx.coroutines.channels.Channel.UNLIMITED}
- * or {@link kotlinx.coroutines.channels.Channel.CONFLATED}
- * @return a flow which emits Responses<T>
+ * @return a flow which emits [Responses<T>]
  */
-fun <T> ApolloCall<T>.toFlow(capacity: Int = Channel.UNLIMITED) = flow {
-    checkCapacity(capacity)
-    val channel = Channel<Response<T>>(capacity)
-
-    enqueue(ChannelCallback(channel = channel))
-    try {
-        for (item in channel) {
-            emit(item)
+@ExperimentalCoroutinesApi
+fun <T> ApolloCall<T>.toFlow(): Flow<Response<T>> = callbackFlow {
+  val clone = clone()
+  clone.enqueue(
+      object : ApolloCall.Callback<T>() {
+        override fun onResponse(response: Response<T>) {
+          runCatching {
+            offer(response)
+          }
         }
-    } finally {
-        cancel()
-    }
-}
 
-/**
- * Converts an {@link ApolloQueryWatcher} to an {@link kotlinx.coroutines.flow.Flow}.
- *
- * @param <T>  the value type.
- * @param capacity the {@link Capacity} used for the underlying channel. Only {@link kotlinx.coroutines.channels.Channel.UNLIMITED}
- * and {@link kotlinx.coroutines.channels.Channel.CONFLATED} are supported at the moment
- * @throws IllegalArgumentException if capacity is not {@link kotlinx.coroutines.channels.Channel.UNLIMITED}
- * or {@link kotlinx.coroutines.channels.Channel.CONFLATED}
- * @return a flow which emits Responses<T>
- */
-fun <T> ApolloQueryWatcher<T>.toFlow(capacity: Int = Channel.UNLIMITED) = flow {
-    checkCapacity(capacity)
-    val channel = Channel<Response<T>>(capacity)
-
-    enqueueAndWatch(ChannelCallback(channel = channel))
-    try {
-        for (item in channel) {
-            emit(item)
+        override fun onFailure(e: ApolloException) {
+          close(e)
         }
-    } finally {
-        cancel()
-    }
+
+        override fun onStatusEvent(event: ApolloCall.StatusEvent) {
+          if (event == ApolloCall.StatusEvent.COMPLETED) {
+            close()
+          }
+        }
+      }
+  )
+  awaitClose { clone.cancel() }
 }
 
 /**
- * Converts an {@link ApolloCall} to an {@link kotlinx.coroutines.channels.Channel}. The number of values produced
- * by the channel is based on the {@link com.apollographql.apollo.fetcher.ResponseFetcher} used with the call.
+ * Converts an [ApolloQueryWatcher] to an [Flow].
  *
  * @param <T>  the value type.
- * @param capacity the {@link Capacity} used for the underlying channel. Only {@link kotlinx.coroutines.channels.Channel.UNLIMITED}
- * and {@link kotlinx.coroutines.channels.Channel.CONFLATED} are supported at the moment
- * @throws IllegalArgumentException if capacity is not {@link kotlinx.coroutines.channels.Channel.UNLIMITED}
- * or {@link kotlinx.coroutines.channels.Channel.CONFLATED}
- * @return the converted channel
+ * @return a flow which emits [Responses<T>]
  */
-fun <T> ApolloCall<T>.toChannel(capacity: Int = Channel.UNLIMITED): Channel<Response<T>> {
-  checkCapacity(capacity)
-  val channel = Channel<Response<T>>(capacity)
+@ExperimentalCoroutinesApi
+fun <T> ApolloQueryWatcher<T>.toFlow(): Flow<Response<T>> = callbackFlow {
+  val clone = clone()
+  clone.enqueueAndWatch(
+      object : ApolloCall.Callback<T>() {
+        override fun onResponse(response: Response<T>) {
+          runCatching {
+            offer(response)
+          }
+        }
 
-  channel.invokeOnClose {
-    cancel()
-  }
-  enqueue(ChannelCallback(channel))
-
-  return channel
+        override fun onFailure(e: ApolloException) {
+          close(e)
+        }
+      }
+  )
+  awaitClose { clone.cancel() }
 }
 
+
 /**
- * Converts an {@link ApolloCall} to an {@link kotlinx.coroutines.Deferred}. This is a convenience method
- * that will only return the first value emitted. If the more than one response is required, for an example
- * to retrieve cached and network response, use {@link toChannel} instead.
+ * Converts an [ApolloCall] to an [Deferred]. This is a convenience method that will only return the first value emitted.
+ * If the more than one response is required, for an example to retrieve cached and network response, use [toFlow] instead.
  *
  * @param <T>  the value type.
  * @return the deferred
@@ -127,11 +89,15 @@ fun <T> ApolloCall<T>.toDeferred(): Deferred<Response<T>> {
   }
   enqueue(object : ApolloCall.Callback<T>() {
     override fun onResponse(response: Response<T>) {
-      deferred.complete(response)
+      if (deferred.isActive) {
+        deferred.complete(response)
+      }
     }
 
     override fun onFailure(e: ApolloException) {
-      deferred.completeExceptionally(e)
+      if (deferred.isActive) {
+        deferred.completeExceptionally(e)
+      }
     }
   })
 
@@ -139,70 +105,43 @@ fun <T> ApolloCall<T>.toDeferred(): Deferred<Response<T>> {
 }
 
 /**
- * Converts an {@link ApolloQueryWatcher} to an {@link kotlinx.coroutines.channels.Channel}.
+ * Converts an [ApolloSubscriptionCall] to an [Flow].
  *
  * @param <T>  the value type.
- * @param capacity the {@link Capacity} used for the underlying channel. Only {@link kotlinx.coroutines.channels.Channel.UNLIMITED}
- * and {@link kotlinx.coroutines.channels.Channel.CONFLATED} are supported at the moment
- * @throws IllegalArgumentException if capacity is not {@link kotlinx.coroutines.channels.Channel.UNLIMITED}
- * or {@link kotlinx.coroutines.channels.Channel.CONFLATED}
- * @return the converted channel
+ * @return a flow which emits [Responses<T>]
  */
-fun <T> ApolloQueryWatcher<T>.toChannel(capacity: Int = Channel.UNLIMITED): Channel<Response<T>> {
-  checkCapacity(capacity)
-  val channel = Channel<Response<T>>(capacity)
+@ExperimentalCoroutinesApi
+fun <T> ApolloSubscriptionCall<T>.toFlow(): Flow<Response<T>> = callbackFlow {
+  val clone = clone()
+  clone.execute(
+      object : ApolloSubscriptionCall.Callback<T> {
+        override fun onConnected() {
+        }
 
-  channel.invokeOnClose {
-    cancel()
-  }
-  enqueueAndWatch(ChannelCallback(channel))
+        override fun onResponse(response: Response<T>) {
+          runCatching {
+            channel.offer(response)
+          }
+        }
 
-  return channel
+        override fun onFailure(e: ApolloException) {
+          channel.close(e)
+        }
+
+        override fun onCompleted() {
+          channel.close()
+        }
+
+        override fun onTerminated() {
+          channel.close()
+        }
+      }
+  )
+  awaitClose { clone.cancel() }
 }
 
 /**
- * Converts an {@link ApolloSubscriptionCall} to an {@link kotlinx.coroutines.channels.Channel}.
- *
- * @param <T>  the value type.
- * @param capacity the {@link Capacity} used for the underlying channel. Only {@link kotlinx.coroutines.channels.Channel.UNLIMITED}
- * and {@link kotlinx.coroutines.channels.Channel.CONFLATED} are supported at the moment
- * @throws IllegalArgumentException if capacity is not {@link kotlinx.coroutines.channels.Channel.UNLIMITED}
- * or {@link kotlinx.coroutines.channels.Channel.CONFLATED}
- * @return the converted channel
- */
-fun <T> ApolloSubscriptionCall<T>.toChannel(capacity: Int = Channel.UNLIMITED): Channel<Response<T>> {
-  checkCapacity(capacity)
-  val channel = Channel<Response<T>>(capacity)
-
-  channel.invokeOnClose {
-    cancel()
-  }
-  execute(object : ApolloSubscriptionCall.Callback<T> {
-    override fun onConnected() {
-    }
-
-    override fun onResponse(response: Response<T>) {
-      channel.offer(response)
-    }
-
-    override fun onFailure(e: ApolloException) {
-      channel.close(e)
-    }
-
-    override fun onCompleted() {
-      channel.close()
-    }
-
-    override fun onTerminated() {
-      channel.close()
-    }
-  })
-
-  return channel
-}
-
-/**
- * Converts an {@link ApolloPrefetch} to an {@link kotlinx.coroutines.Job}.
+ * Converts an [ApolloPrefetch] to [Job].
  *
  * @param <T>  the value type.
  * @return the converted job
@@ -218,11 +157,15 @@ fun ApolloPrefetch.toJob(): Job {
 
   enqueue(object : ApolloPrefetch.Callback() {
     override fun onSuccess() {
-      deferred.complete(Unit)
+      if (deferred.isActive) {
+        deferred.complete(Unit)
+      }
     }
 
     override fun onFailure(e: ApolloException) {
-      deferred.completeExceptionally(e)
+      if (deferred.isActive) {
+        deferred.completeExceptionally(e)
+      }
     }
   })
 

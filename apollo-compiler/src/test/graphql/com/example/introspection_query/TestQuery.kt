@@ -8,15 +8,26 @@ package com.example.introspection_query
 import com.apollographql.apollo.api.Operation
 import com.apollographql.apollo.api.OperationName
 import com.apollographql.apollo.api.Query
+import com.apollographql.apollo.api.Response
 import com.apollographql.apollo.api.ResponseField
-import com.apollographql.apollo.api.ResponseFieldMapper
-import com.apollographql.apollo.api.ResponseFieldMarshaller
-import com.apollographql.apollo.api.ResponseReader
-import com.apollographql.apollo.internal.QueryDocumentMinifier
+import com.apollographql.apollo.api.ScalarTypeAdapters
+import com.apollographql.apollo.api.ScalarTypeAdapters.Companion.DEFAULT
+import com.apollographql.apollo.api.internal.OperationRequestBodyComposer
+import com.apollographql.apollo.api.internal.QueryDocumentMinifier
+import com.apollographql.apollo.api.internal.ResponseFieldMapper
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller
+import com.apollographql.apollo.api.internal.ResponseReader
+import com.apollographql.apollo.api.internal.SimpleOperationResponseParser
+import com.apollographql.apollo.api.internal.Throws
 import kotlin.Array
+import kotlin.Boolean
 import kotlin.String
 import kotlin.Suppress
 import kotlin.collections.List
+import okio.Buffer
+import okio.BufferedSource
+import okio.ByteString
+import okio.IOException
 
 @Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
     "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
@@ -26,17 +37,66 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
   override fun wrapData(data: Data?): Data? = data
   override fun variables(): Operation.Variables = Operation.EMPTY_VARIABLES
   override fun name(): OperationName = OPERATION_NAME
-  override fun responseFieldMapper(): ResponseFieldMapper<Data> = ResponseFieldMapper {
+  override fun responseFieldMapper(): ResponseFieldMapper<Data> = ResponseFieldMapper.invoke {
     Data(it)
   }
 
+  @Throws(IOException::class)
+  override fun parse(source: BufferedSource, scalarTypeAdapters: ScalarTypeAdapters): Response<Data>
+      = SimpleOperationResponseParser.parse(source, this, scalarTypeAdapters)
+
+  @Throws(IOException::class)
+  override fun parse(byteString: ByteString, scalarTypeAdapters: ScalarTypeAdapters): Response<Data>
+      = parse(Buffer().write(byteString), scalarTypeAdapters)
+
+  @Throws(IOException::class)
+  override fun parse(source: BufferedSource): Response<Data> = parse(source, DEFAULT)
+
+  @Throws(IOException::class)
+  override fun parse(byteString: ByteString): Response<Data> = parse(byteString, DEFAULT)
+
+  override fun composeRequestBody(scalarTypeAdapters: ScalarTypeAdapters): ByteString =
+      OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = false,
+    withQueryDocument = true,
+    scalarTypeAdapters = scalarTypeAdapters
+  )
+
+  override fun composeRequestBody(): ByteString = OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = false,
+    withQueryDocument = true,
+    scalarTypeAdapters = DEFAULT
+  )
+
+  override fun composeRequestBody(
+    autoPersistQueries: Boolean,
+    withQueryDocument: Boolean,
+    scalarTypeAdapters: ScalarTypeAdapters
+  ): ByteString = OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = autoPersistQueries,
+    withQueryDocument = withQueryDocument,
+    scalarTypeAdapters = scalarTypeAdapters
+  )
+
+  /**
+   * The fundamental unit of any GraphQL Schema is the type. There are many kinds of types in
+   * GraphQL as represented by the `__TypeKind` enum.
+   *
+   * Depending on the kind of a type, certain fields describe information about that type. Scalar
+   * types provide no information beyond a name and description, while Enum types provide their values.
+   * Object and Interface types provide the fields they describe. Abstract types, Union and Interface,
+   * provide the Object types possible at runtime. List and NonNull types compose other types.
+   */
   data class QueryType(
-    val __typename: String,
+    val __typename: String = "__Type",
     val name: String?
   ) {
-    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeString(RESPONSE_FIELDS[0], __typename)
-      it.writeString(RESPONSE_FIELDS[1], name)
+    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeString(RESPONSE_FIELDS[0], this@QueryType.__typename)
+      writer.writeString(RESPONSE_FIELDS[1], this@QueryType.name)
     }
 
     companion object {
@@ -45,24 +105,36 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
           ResponseField.forString("name", "name", null, true, null)
           )
 
-      operator fun invoke(reader: ResponseReader): QueryType {
-        val __typename = reader.readString(RESPONSE_FIELDS[0])
-        val name = reader.readString(RESPONSE_FIELDS[1])
-        return QueryType(
+      operator fun invoke(reader: ResponseReader): QueryType = reader.run {
+        val __typename = readString(RESPONSE_FIELDS[0])!!
+        val name = readString(RESPONSE_FIELDS[1])
+        QueryType(
           __typename = __typename,
           name = name
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<QueryType> = ResponseFieldMapper { invoke(it) }
     }
   }
 
+  /**
+   * The fundamental unit of any GraphQL Schema is the type. There are many kinds of types in
+   * GraphQL as represented by the `__TypeKind` enum.
+   *
+   * Depending on the kind of a type, certain fields describe information about that type. Scalar
+   * types provide no information beyond a name and description, while Enum types provide their values.
+   * Object and Interface types provide the fields they describe. Abstract types, Union and Interface,
+   * provide the Object types possible at runtime. List and NonNull types compose other types.
+   */
   data class Type(
-    val __typename: String,
+    val __typename: String = "__Type",
     val name: String?
   ) {
-    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeString(RESPONSE_FIELDS[0], __typename)
-      it.writeString(RESPONSE_FIELDS[1], name)
+    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeString(RESPONSE_FIELDS[0], this@Type.__typename)
+      writer.writeString(RESPONSE_FIELDS[1], this@Type.name)
     }
 
     companion object {
@@ -71,19 +143,27 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
           ResponseField.forString("name", "name", null, true, null)
           )
 
-      operator fun invoke(reader: ResponseReader): Type {
-        val __typename = reader.readString(RESPONSE_FIELDS[0])
-        val name = reader.readString(RESPONSE_FIELDS[1])
-        return Type(
+      operator fun invoke(reader: ResponseReader): Type = reader.run {
+        val __typename = readString(RESPONSE_FIELDS[0])!!
+        val name = readString(RESPONSE_FIELDS[1])
+        Type(
           __typename = __typename,
           name = name
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<Type> = ResponseFieldMapper { invoke(it) }
     }
   }
 
+  /**
+   * A GraphQL Schema defines the capabilities of a GraphQL server. It exposes all available types
+   * and directives on the server, as well as the entry points for query, mutation, and subscription
+   * operations.
+   */
   data class __Schema(
-    val __typename: String,
+    val __typename: String = "__Schema",
     /**
      * The type that query operations will be rooted at.
      */
@@ -93,13 +173,12 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
      */
     val types: List<Type>
   ) {
-    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeString(RESPONSE_FIELDS[0], __typename)
-      it.writeObject(RESPONSE_FIELDS[1], queryType.marshaller())
-      it.writeList(RESPONSE_FIELDS[2], types) { value, listItemWriter ->
+    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeString(RESPONSE_FIELDS[0], this@__Schema.__typename)
+      writer.writeObject(RESPONSE_FIELDS[1], this@__Schema.queryType.marshaller())
+      writer.writeList(RESPONSE_FIELDS[2], this@__Schema.types) { value, listItemWriter ->
         value?.forEach { value ->
-          listItemWriter.writeObject(value?.marshaller())
-        }
+          listItemWriter.writeObject(value.marshaller())}
       }
     }
 
@@ -110,34 +189,44 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
           ResponseField.forList("types", "types", null, false, null)
           )
 
-      operator fun invoke(reader: ResponseReader): __Schema {
-        val __typename = reader.readString(RESPONSE_FIELDS[0])
-        val queryType = reader.readObject<QueryType>(RESPONSE_FIELDS[1]) { reader ->
+      operator fun invoke(reader: ResponseReader): __Schema = reader.run {
+        val __typename = readString(RESPONSE_FIELDS[0])!!
+        val queryType = readObject<QueryType>(RESPONSE_FIELDS[1]) { reader ->
           QueryType(reader)
-        }
-
-        val types = reader.readList<Type>(RESPONSE_FIELDS[2]) {
-          it.readObject<Type> { reader ->
+        }!!
+        val types = readList<Type>(RESPONSE_FIELDS[2]) { reader ->
+          reader.readObject<Type> { reader ->
             Type(reader)
           }
-
-        }
-        return __Schema(
+        }!!.map { it!! }
+        __Schema(
           __typename = __typename,
           queryType = queryType,
           types = types
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<__Schema> = ResponseFieldMapper { invoke(it) }
     }
   }
 
+  /**
+   * The fundamental unit of any GraphQL Schema is the type. There are many kinds of types in
+   * GraphQL as represented by the `__TypeKind` enum.
+   *
+   * Depending on the kind of a type, certain fields describe information about that type. Scalar
+   * types provide no information beyond a name and description, while Enum types provide their values.
+   * Object and Interface types provide the fields they describe. Abstract types, Union and Interface,
+   * provide the Object types possible at runtime. List and NonNull types compose other types.
+   */
   data class __Type(
-    val __typename: String,
+    val __typename: String = "__Type",
     val name: String?
   ) {
-    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeString(RESPONSE_FIELDS[0], __typename)
-      it.writeString(RESPONSE_FIELDS[1], name)
+    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeString(RESPONSE_FIELDS[0], this@__Type.__typename)
+      writer.writeString(RESPONSE_FIELDS[1], this@__Type.name)
     }
 
     companion object {
@@ -146,24 +235,30 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
           ResponseField.forString("name", "name", null, true, null)
           )
 
-      operator fun invoke(reader: ResponseReader): __Type {
-        val __typename = reader.readString(RESPONSE_FIELDS[0])
-        val name = reader.readString(RESPONSE_FIELDS[1])
-        return __Type(
+      operator fun invoke(reader: ResponseReader): __Type = reader.run {
+        val __typename = readString(RESPONSE_FIELDS[0])!!
+        val name = readString(RESPONSE_FIELDS[1])
+        __Type(
           __typename = __typename,
           name = name
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<__Type> = ResponseFieldMapper { invoke(it) }
     }
   }
 
+  /**
+   * Data from the response after executing this GraphQL operation
+   */
   data class Data(
     val __schema: __Schema,
     val __type: __Type?
   ) : Operation.Data {
-    override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeObject(RESPONSE_FIELDS[0], __schema.marshaller())
-      it.writeObject(RESPONSE_FIELDS[1], __type?.marshaller())
+    override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeObject(RESPONSE_FIELDS[0], this@Data.__schema.marshaller())
+      writer.writeObject(RESPONSE_FIELDS[1], this@Data.__type?.marshaller())
     }
 
     companion object {
@@ -173,20 +268,21 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
             "name" to "Vehicle"), true, null)
           )
 
-      operator fun invoke(reader: ResponseReader): Data {
-        val __schema = reader.readObject<__Schema>(RESPONSE_FIELDS[0]) { reader ->
+      operator fun invoke(reader: ResponseReader): Data = reader.run {
+        val __schema = readObject<__Schema>(RESPONSE_FIELDS[0]) { reader ->
           __Schema(reader)
-        }
-
-        val __type = reader.readObject<__Type>(RESPONSE_FIELDS[1]) { reader ->
+        }!!
+        val __type = readObject<__Type>(RESPONSE_FIELDS[1]) { reader ->
           __Type(reader)
         }
-
-        return Data(
+        Data(
           __schema = __schema,
           __type = __type
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<Data> = ResponseFieldMapper { invoke(it) }
     }
   }
 
@@ -216,6 +312,8 @@ class TestQuery : Query<TestQuery.Data, TestQuery.Data, Operation.Variables> {
           """.trimMargin()
         )
 
-    val OPERATION_NAME: OperationName = OperationName { "TestQuery" }
+    val OPERATION_NAME: OperationName = object : OperationName {
+      override fun name(): String = "TestQuery"
+    }
   }
 }

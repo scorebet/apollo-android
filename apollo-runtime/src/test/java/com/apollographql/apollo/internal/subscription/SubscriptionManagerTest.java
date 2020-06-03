@@ -1,16 +1,18 @@
 package com.apollographql.apollo.internal.subscription;
 
+import com.apollographql.apollo.api.CustomTypeAdapter;
 import com.apollographql.apollo.api.Operation;
 import com.apollographql.apollo.api.OperationName;
 import com.apollographql.apollo.api.Response;
-import com.apollographql.apollo.api.ResponseFieldMapper;
-import com.apollographql.apollo.api.ResponseFieldMarshaller;
-import com.apollographql.apollo.api.ResponseReader;
 import com.apollographql.apollo.api.ScalarType;
+import com.apollographql.apollo.api.ScalarTypeAdapters;
 import com.apollographql.apollo.api.Subscription;
+import com.apollographql.apollo.api.internal.ResponseFieldMapper;
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller;
+import com.apollographql.apollo.api.internal.ResponseReader;
 import com.apollographql.apollo.api.internal.UnmodifiableMapBuilder;
-import com.apollographql.apollo.response.CustomTypeAdapter;
-import com.apollographql.apollo.response.ScalarTypeAdapters;
+import com.apollographql.apollo.cache.normalized.ApolloStore;
+import com.apollographql.apollo.cache.normalized.internal.ResponseNormalizer;
 import com.apollographql.apollo.subscription.OnSubscriptionManagerStateChangeListener;
 import com.apollographql.apollo.subscription.OperationClientMessage;
 import com.apollographql.apollo.subscription.OperationServerMessage;
@@ -18,6 +20,9 @@ import com.apollographql.apollo.subscription.SubscriptionConnectionParams;
 import com.apollographql.apollo.subscription.SubscriptionConnectionParamsProvider;
 import com.apollographql.apollo.subscription.SubscriptionManagerState;
 import com.apollographql.apollo.subscription.SubscriptionTransport;
+import kotlin.jvm.functions.Function0;
+import okio.BufferedSource;
+import okio.ByteString;
 import org.jetbrains.annotations.NotNull;
 import org.junit.Before;
 import org.junit.Test;
@@ -25,6 +30,7 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -41,9 +47,13 @@ public class SubscriptionManagerTest {
 
   @Before public void setUp() {
     subscriptionTransportFactory = new MockSubscriptionTransportFactory();
-    subscriptionManager = new RealSubscriptionManager(new ScalarTypeAdapters(Collections.<ScalarType, CustomTypeAdapter>emptyMap()),
+    subscriptionManager = new RealSubscriptionManager(new ScalarTypeAdapters(Collections.<ScalarType, CustomTypeAdapter<?>>emptyMap()),
         subscriptionTransportFactory, new SubscriptionConnectionParamsProvider.Const(new SubscriptionConnectionParams()),
-        new MockExecutor(), connectionHeartbeatTimeoutMs);
+        new MockExecutor(), connectionHeartbeatTimeoutMs, new Function0<ResponseNormalizer<Map<String, Object>>>() {
+      @Override public ResponseNormalizer<Map<String, Object>> invoke() {
+        return ApolloStore.NO_APOLLO_STORE.networkResponseNormalizer();
+      }
+    }, false);
     subscriptionManager.addOnStateChangeListener(onStateChangeListener);
     assertThat(subscriptionTransportFactory.subscriptionTransport).isNotNull();
     assertThat(subscriptionManager.state).isEqualTo(SubscriptionManagerState.DISCONNECTED);
@@ -433,17 +443,41 @@ public class SubscriptionManagerTest {
     @NotNull @Override public String operationId() {
       return operationId;
     }
+
+    @NotNull @Override public Response<Data> parse(@NotNull BufferedSource source) {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public Response<Data> parse(@NotNull BufferedSource source, @NotNull ScalarTypeAdapters scalarTypeAdapters) {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public Response parse(@NotNull ByteString byteString) {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public Response parse(@NotNull ByteString byteString, @NotNull ScalarTypeAdapters scalarTypeAdapters) {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public ByteString composeRequestBody(@NotNull ScalarTypeAdapters scalarTypeAdapters) {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public ByteString composeRequestBody() {
+      throw new UnsupportedOperationException();
+    }
   }
 
   private static class SubscriptionManagerCallbackAdapter<T> implements SubscriptionManager.Callback<T> {
-    volatile Response<T> response;
+    volatile SubscriptionResponse<T> response;
     volatile ApolloSubscriptionException error;
     volatile Throwable networkError;
     volatile boolean completed;
     volatile boolean terminated;
     volatile boolean connected;
 
-    @Override public void onResponse(@NotNull Response<T> response) {
+    @Override public void onResponse(@NotNull SubscriptionResponse<T> response) {
       this.response = response;
     }
 

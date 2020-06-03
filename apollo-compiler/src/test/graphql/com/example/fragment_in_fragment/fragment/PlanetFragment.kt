@@ -7,8 +7,9 @@ package com.example.fragment_in_fragment.fragment
 
 import com.apollographql.apollo.api.GraphqlFragment
 import com.apollographql.apollo.api.ResponseField
-import com.apollographql.apollo.api.ResponseFieldMarshaller
-import com.apollographql.apollo.api.ResponseReader
+import com.apollographql.apollo.api.internal.ResponseFieldMapper
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller
+import com.apollographql.apollo.api.internal.ResponseReader
 import kotlin.Array
 import kotlin.String
 import kotlin.Suppress
@@ -16,15 +17,15 @@ import kotlin.Suppress
 @Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
     "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
 data class PlanetFragment(
-  val __typename: String,
+  val __typename: String = "Planet",
   /**
    * The name of this planet.
    */
   val name: String?
 ) : GraphqlFragment {
-  override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-    it.writeString(RESPONSE_FIELDS[0], __typename)
-    it.writeString(RESPONSE_FIELDS[1], name)
+  override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+    writer.writeString(RESPONSE_FIELDS[0], this@PlanetFragment.__typename)
+    writer.writeString(RESPONSE_FIELDS[1], this@PlanetFragment.name)
   }
 
   companion object {
@@ -40,15 +41,16 @@ data class PlanetFragment(
         |}
         """.trimMargin()
 
-    val POSSIBLE_TYPES: Array<String> = arrayOf("Planet")
-
-    operator fun invoke(reader: ResponseReader): PlanetFragment {
-      val __typename = reader.readString(RESPONSE_FIELDS[0])
-      val name = reader.readString(RESPONSE_FIELDS[1])
-      return PlanetFragment(
+    operator fun invoke(reader: ResponseReader): PlanetFragment = reader.run {
+      val __typename = readString(RESPONSE_FIELDS[0])!!
+      val name = readString(RESPONSE_FIELDS[1])
+      PlanetFragment(
         __typename = __typename,
         name = name
       )
     }
+
+    @Suppress("FunctionName")
+    fun Mapper(): ResponseFieldMapper<PlanetFragment> = ResponseFieldMapper { invoke(it) }
   }
 }

@@ -1,24 +1,16 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
-apply(plugin = "antlr")
-apply(plugin = "java")
-apply(plugin = "kotlin")
-apply(plugin = "kotlin-kapt")
-
-withConvention(JavaPluginConvention::class) {
-  targetCompatibility = JavaVersion.VERSION_1_7
-  sourceCompatibility = JavaVersion.VERSION_1_7
-
-  // As temporary solution enable this to verify if generated kotlin test fixtures compiles
-  sourceSets["test"].java.srcDir("src/test/graphql").exclude("**/*.java")
+plugins {
+  antlr
+  `java-library`
+  kotlin("jvm")
+  kotlin("kapt")
 }
 
 dependencies {
   add("antlr", groovy.util.Eval.x(project, "x.dep.antlr.antlr"))
-  add("compile", groovy.util.Eval.x(project, "x.dep.antlr.runtime"))
   add("implementation", groovy.util.Eval.x(project, "x.dep.kotlin.stdLib"))
   add("implementation", groovy.util.Eval.x(project, "x.dep.moshi.adapters"))
-  add("implementation", groovy.util.Eval.x(project, "x.dep.moshi.kotlin"))
   add("implementation", groovy.util.Eval.x(project, "x.dep.moshi.moshi"))
   add("implementation", groovy.util.Eval.x(project, "x.dep.poet.java"))
   add("implementation", groovy.util.Eval.x(project, "x.dep.poet.kotlin"))
@@ -28,12 +20,9 @@ dependencies {
 
 
   add("testImplementation", groovy.util.Eval.x(project, "x.dep.compiletesting"))
+  add("testImplementation", groovy.util.Eval.x(project, "x.dep.kotlinCompileTesting"))
   add("testImplementation", groovy.util.Eval.x(project, "x.dep.junit"))
   add("testImplementation", groovy.util.Eval.x(project, "x.dep.truth"))
-}
-
-tasks.withType<KotlinCompile> {
-  dependsOn("generateGrammarSource")
 }
 
 tasks.register("pluginVersion") {
@@ -55,12 +44,8 @@ val VERSION = "${project.version}"
 tasks.getByName("compileKotlin").dependsOn("pluginVersion")
 
 tasks.withType<Checkstyle> {
-    exclude("**com/apollographql/apollo/compiler/parser/antlr/**")
+  exclude("**com/apollographql/apollo/compiler/parser/antlr/**")
 }
 
-apply {
-  from(rootProject.file("gradle/gradle-mvn-push.gradle"))
-}
-apply {
-  from(rootProject.file("gradle/bintray.gradle"))
-}
+// since test/graphql is not an input to Test tasks, they're not run with the changes made in there.
+tasks.withType<Test>().configureEach { outputs.upToDateWhen { false } }
