@@ -5,20 +5,24 @@
 //
 package com.example.union_fragment;
 
-import com.apollographql.apollo.api.FragmentResponseFieldMapper;
 import com.apollographql.apollo.api.Operation;
 import com.apollographql.apollo.api.OperationName;
 import com.apollographql.apollo.api.Query;
+import com.apollographql.apollo.api.Response;
 import com.apollographql.apollo.api.ResponseField;
-import com.apollographql.apollo.api.ResponseFieldMapper;
-import com.apollographql.apollo.api.ResponseFieldMarshaller;
-import com.apollographql.apollo.api.ResponseReader;
-import com.apollographql.apollo.api.ResponseWriter;
+import com.apollographql.apollo.api.ScalarTypeAdapters;
+import com.apollographql.apollo.api.internal.OperationRequestBodyComposer;
+import com.apollographql.apollo.api.internal.QueryDocumentMinifier;
+import com.apollographql.apollo.api.internal.ResponseFieldMapper;
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller;
+import com.apollographql.apollo.api.internal.ResponseReader;
+import com.apollographql.apollo.api.internal.ResponseWriter;
+import com.apollographql.apollo.api.internal.SimpleOperationResponseParser;
 import com.apollographql.apollo.api.internal.UnmodifiableMapBuilder;
 import com.apollographql.apollo.api.internal.Utils;
-import com.apollographql.apollo.internal.QueryDocumentMinifier;
 import com.example.union_fragment.fragment.Character;
 import com.example.union_fragment.fragment.Starship;
+import java.io.IOException;
 import java.lang.Object;
 import java.lang.Override;
 import java.lang.String;
@@ -26,6 +30,9 @@ import java.lang.SuppressWarnings;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import okio.Buffer;
+import okio.BufferedSource;
+import okio.ByteString;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -98,6 +105,51 @@ public final class TestQuery implements Query<TestQuery.Data, TestQuery.Data, Op
     return OPERATION_NAME;
   }
 
+  @Override
+  @NotNull
+  public Response<TestQuery.Data> parse(@NotNull final BufferedSource source,
+      @NotNull final ScalarTypeAdapters scalarTypeAdapters) throws IOException {
+    return SimpleOperationResponseParser.parse(source, this, scalarTypeAdapters);
+  }
+
+  @Override
+  @NotNull
+  public Response<TestQuery.Data> parse(@NotNull final ByteString byteString,
+      @NotNull final ScalarTypeAdapters scalarTypeAdapters) throws IOException {
+    return parse(new Buffer().write(byteString), scalarTypeAdapters);
+  }
+
+  @Override
+  @NotNull
+  public Response<TestQuery.Data> parse(@NotNull final BufferedSource source) throws IOException {
+    return parse(source, ScalarTypeAdapters.DEFAULT);
+  }
+
+  @Override
+  @NotNull
+  public Response<TestQuery.Data> parse(@NotNull final ByteString byteString) throws IOException {
+    return parse(byteString, ScalarTypeAdapters.DEFAULT);
+  }
+
+  @Override
+  @NotNull
+  public ByteString composeRequestBody(@NotNull final ScalarTypeAdapters scalarTypeAdapters) {
+    return OperationRequestBodyComposer.compose(this, false, true, scalarTypeAdapters);
+  }
+
+  @NotNull
+  @Override
+  public ByteString composeRequestBody() {
+    return OperationRequestBodyComposer.compose(this, false, true, ScalarTypeAdapters.DEFAULT);
+  }
+
+  @Override
+  @NotNull
+  public ByteString composeRequestBody(final boolean autoPersistQueries,
+      final boolean withQueryDocument, @NotNull final ScalarTypeAdapters scalarTypeAdapters) {
+    return OperationRequestBodyComposer.compose(this, autoPersistQueries, withQueryDocument, scalarTypeAdapters);
+  }
+
   public static final class Builder {
     Builder() {
     }
@@ -107,6 +159,9 @@ public final class TestQuery implements Query<TestQuery.Data, TestQuery.Data, Op
     }
   }
 
+  /**
+   * Data from the response after executing this GraphQL operation
+   */
   public static class Data implements Operation.Data {
     static final ResponseField[] $responseFields = {
       ResponseField.forList("search", "search", new UnmodifiableMapBuilder<String, Object>(1)
@@ -130,7 +185,7 @@ public final class TestQuery implements Query<TestQuery.Data, TestQuery.Data, Op
       return this.search;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -205,9 +260,7 @@ public final class TestQuery implements Query<TestQuery.Data, TestQuery.Data, Op
   public static class Search {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
-      ResponseField.forFragment("__typename", "__typename", Arrays.asList("Human",
-      "Droid",
-      "Starship"))
+      ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList())
     };
 
     final @NotNull String __typename;
@@ -233,7 +286,7 @@ public final class TestQuery implements Query<TestQuery.Data, TestQuery.Data, Op
       return this.fragments;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -310,14 +363,8 @@ public final class TestQuery implements Query<TestQuery.Data, TestQuery.Data, Op
         return new ResponseFieldMarshaller() {
           @Override
           public void marshal(ResponseWriter writer) {
-            final Character $character = character;
-            if ($character != null) {
-              $character.marshaller().marshal(writer);
-            }
-            final Starship $starship = starship;
-            if ($starship != null) {
-              $starship.marshaller().marshal(writer);
-            }
+            writer.writeFragment(character.marshaller());
+            writer.writeFragment(starship.marshaller());
           }
         };
       }
@@ -360,21 +407,34 @@ public final class TestQuery implements Query<TestQuery.Data, TestQuery.Data, Op
         return $hashCode;
       }
 
-      public static final class Mapper implements FragmentResponseFieldMapper<Fragments> {
+      public static final class Mapper implements ResponseFieldMapper<Fragments> {
+        static final ResponseField[] $responseFields = {
+          ResponseField.forFragment("__typename", "__typename", Arrays.<ResponseField.Condition>asList(
+            ResponseField.Condition.typeCondition(new String[] {"Human", "Droid"})
+          )),
+          ResponseField.forFragment("__typename", "__typename", Arrays.<ResponseField.Condition>asList(
+            ResponseField.Condition.typeCondition(new String[] {"Starship"})
+          ))
+        };
+
         final Character.Mapper characterFieldMapper = new Character.Mapper();
 
         final Starship.Mapper starshipFieldMapper = new Starship.Mapper();
 
         @Override
-        public @NotNull Fragments map(ResponseReader reader, @NotNull String conditionalType) {
-          Character character = null;
-          Starship starship = null;
-          if (Character.POSSIBLE_TYPES.contains(conditionalType)) {
-            character = characterFieldMapper.map(reader);
-          }
-          if (Starship.POSSIBLE_TYPES.contains(conditionalType)) {
-            starship = starshipFieldMapper.map(reader);
-          }
+        public @NotNull Fragments map(ResponseReader reader) {
+          final Character character = reader.readFragment($responseFields[0], new ResponseReader.ObjectReader<Character>() {
+            @Override
+            public Character read(ResponseReader reader) {
+              return characterFieldMapper.map(reader);
+            }
+          });
+          final Starship starship = reader.readFragment($responseFields[1], new ResponseReader.ObjectReader<Starship>() {
+            @Override
+            public Starship read(ResponseReader reader) {
+              return starshipFieldMapper.map(reader);
+            }
+          });
           return new Fragments(character, starship);
         }
       }
@@ -386,12 +446,7 @@ public final class TestQuery implements Query<TestQuery.Data, TestQuery.Data, Op
       @Override
       public Search map(ResponseReader reader) {
         final String __typename = reader.readString($responseFields[0]);
-        final Fragments fragments = reader.readConditional($responseFields[1], new ResponseReader.ConditionalTypeReader<Fragments>() {
-          @Override
-          public Fragments read(String conditionalType, ResponseReader reader) {
-            return fragmentsFieldMapper.map(reader, conditionalType);
-          }
-        });
+        final Fragments fragments = fragmentsFieldMapper.map(reader);
         return new Search(__typename, fragments);
       }
     }

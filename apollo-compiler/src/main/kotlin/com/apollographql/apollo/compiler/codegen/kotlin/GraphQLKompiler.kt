@@ -1,7 +1,7 @@
 package com.apollographql.apollo.compiler.codegen.kotlin
 
-import com.apollographql.apollo.compiler.DeprecatedPackageNameProvider
 import com.apollographql.apollo.compiler.PackageNameProvider
+import com.apollographql.apollo.compiler.OperationIdGenerator
 import com.apollographql.apollo.compiler.ast.CustomTypes
 import com.apollographql.apollo.compiler.ast.builder.ast
 import com.apollographql.apollo.compiler.ir.CodeGenerationIR
@@ -14,7 +14,11 @@ class GraphQLKompiler(
     private val ir: CodeGenerationIR,
     private val customTypeMap: Map<String, String>,
     private val packageNameProvider: PackageNameProvider,
-    private val useSemanticNaming: Boolean
+    private val useSemanticNaming: Boolean,
+    private val generateAsInternal: Boolean = false,
+    private val operationIdGenerator: OperationIdGenerator,
+    private val kotlinMultiPlatformProject: Boolean,
+    private val enumAsSealedClassPatternFilters: List<Regex>
 ) {
   fun write(outputDir: File) {
     val customTypeMap = customTypeMap.supportedCustomTypes(ir.typesUsed)
@@ -22,16 +26,14 @@ class GraphQLKompiler(
         customTypeMap = customTypeMap,
         typesPackageName = packageNameProvider.typesPackageName,
         fragmentsPackage = packageNameProvider.fragmentsPackageName,
-        useSemanticNaming = useSemanticNaming
+        useSemanticNaming = useSemanticNaming,
+        operationIdGenerator = operationIdGenerator
     )
-
-    val irPackageName = (packageNameProvider as? DeprecatedPackageNameProvider)?.schemaPackageName ?: ""
-    if (irPackageName.isNotEmpty()) {
-      File(outputDir, irPackageName.replace('.', File.separatorChar)).deleteRecursively()
-    }
-
     val schemaCodegen = SchemaCodegen(
-        packageNameProvider = packageNameProvider
+        packageNameProvider = packageNameProvider,
+        generateAsInternal = generateAsInternal,
+        kotlinMultiPlatformProject = kotlinMultiPlatformProject,
+        enumAsSealedClassPatternFilters = enumAsSealedClassPatternFilters
     )
     schemaCodegen.apply(schema::accept).writeTo(outputDir)
   }

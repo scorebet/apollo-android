@@ -40,7 +40,8 @@ private fun Field.array(context: Context): ObjectType.Field {
         context.registerObjectType(
             name = responseName.replace("[", "").replace("]", "").replace("!", ""),
             schemaTypeName = type.replace("[", "").replace("]", "").replace("!", ""),
-            fragmentSpreads = fragmentSpreads,
+            description = typeDescription,
+            fragmentRefs = fragmentRefs,
             inlineFragments = inlineFragments,
             fields = fields,
             kind = ObjectType.Kind.Object
@@ -71,7 +72,7 @@ private fun Field.array(context: Context): ObjectType.Field {
       description = description,
       isOptional = !type.endsWith("!") || isConditional,
       isDeprecated = isDeprecated,
-      deprecationReason = deprecationReason ?: "",
+      deprecationReason = deprecationReason,
       arguments = args.associate { it.name to it.value },
       conditions = normalizedConditions
   )
@@ -81,9 +82,11 @@ private fun Field.`object`(context: Context): ObjectType.Field {
   val typeRef = context.registerObjectType(
       name = responseName.replace("[", "").replace("[", "").replace("!", ""),
       schemaTypeName = type.replace("[", "").replace("[", "").replace("!", ""),
-      fragmentSpreads = fragmentSpreads,
+      description = typeDescription,
+      fragmentRefs = fragmentRefs,
       inlineFragments = inlineFragments,
       fields = fields,
+      singularize = false,
       kind = ObjectType.Kind.Object
   )
   return ObjectType.Field(
@@ -91,10 +94,10 @@ private fun Field.`object`(context: Context): ObjectType.Field {
       responseName = responseName,
       schemaName = fieldName,
       type = FieldType.Object(typeRef),
-      description = description ?: "",
-      isOptional = !type.endsWith("!") || isConditional || inlineFragments.isNotEmpty(),
-      isDeprecated = isDeprecated ?: false,
-      deprecationReason = deprecationReason ?: "",
+      description = description,
+      isOptional = !type.endsWith("!") || isConditional,
+      isDeprecated = isDeprecated,
+      deprecationReason = deprecationReason,
       arguments = args.associate { it.name to it.value },
       conditions = normalizedConditions
   )

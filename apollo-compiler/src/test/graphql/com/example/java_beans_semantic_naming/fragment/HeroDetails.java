@@ -7,11 +7,11 @@ package com.example.java_beans_semantic_naming.fragment;
 
 import com.apollographql.apollo.api.GraphqlFragment;
 import com.apollographql.apollo.api.ResponseField;
-import com.apollographql.apollo.api.ResponseFieldMapper;
-import com.apollographql.apollo.api.ResponseFieldMarshaller;
-import com.apollographql.apollo.api.ResponseReader;
-import com.apollographql.apollo.api.ResponseWriter;
 import com.apollographql.apollo.api.internal.Optional;
+import com.apollographql.apollo.api.internal.ResponseFieldMapper;
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller;
+import com.apollographql.apollo.api.internal.ResponseReader;
+import com.apollographql.apollo.api.internal.ResponseWriter;
 import com.apollographql.apollo.api.internal.Utils;
 import java.lang.Integer;
 import java.lang.Object;
@@ -50,8 +50,6 @@ public interface HeroDetails extends GraphqlFragment {
       + "  }\n"
       + "}";
 
-  List<String> POSSIBLE_TYPES = Collections.unmodifiableList(Arrays.asList( "Human", "Droid"));
-
   @NotNull String get__typename();
 
   /**
@@ -67,15 +65,21 @@ public interface HeroDetails extends GraphqlFragment {
   ResponseFieldMarshaller marshaller();
 
   final class Mapper implements ResponseFieldMapper<HeroDetails> {
+    static final ResponseField[] $responseFields = {
+      ResponseField.forFragment("__typename", "__typename", Arrays.<ResponseField.Condition>asList(
+        ResponseField.Condition.typeCondition(new String[] {"Droid"})
+      ))
+    };
+
     final AsDroid.Mapper asDroidFieldMapper = new AsDroid.Mapper();
 
     final AsCharacter.Mapper asCharacterFieldMapper = new AsCharacter.Mapper();
 
     @Override
     public HeroDetails map(ResponseReader reader) {
-      final AsDroid asDroid = reader.readConditional(ResponseField.forInlineFragment("__typename", "__typename", Arrays.asList("Droid")), new ResponseReader.ConditionalTypeReader<AsDroid>() {
+      final AsDroid asDroid = reader.readFragment($responseFields[0], new ResponseReader.ObjectReader<AsDroid>() {
         @Override
-        public AsDroid read(String conditionalType, ResponseReader reader) {
+        public AsDroid read(ResponseReader reader) {
           return asDroidFieldMapper.map(reader);
         }
       });
@@ -86,6 +90,9 @@ public interface HeroDetails extends GraphqlFragment {
     }
   }
 
+  /**
+   * A connection object for a character's friends
+   */
   interface FriendsConnection {
     @NotNull String get__typename();
 
@@ -112,6 +119,9 @@ public interface HeroDetails extends GraphqlFragment {
     ResponseFieldMarshaller marshaller();
   }
 
+  /**
+   * An edge object for a character's friends
+   */
   interface Edge {
     @NotNull String get__typename();
 
@@ -123,6 +133,9 @@ public interface HeroDetails extends GraphqlFragment {
     ResponseFieldMarshaller marshaller();
   }
 
+  /**
+   * A character from the Star Wars universe
+   */
   interface Node {
     @NotNull String get__typename();
 
@@ -134,6 +147,9 @@ public interface HeroDetails extends GraphqlFragment {
     ResponseFieldMarshaller marshaller();
   }
 
+  /**
+   * Information for paginating this connection
+   */
   interface PageInfo {
     @NotNull String get__typename();
 
@@ -142,6 +158,9 @@ public interface HeroDetails extends GraphqlFragment {
     ResponseFieldMarshaller marshaller();
   }
 
+  /**
+   * An autonomous mechanical character in the Star Wars universe
+   */
   class AsDroid implements HeroDetails {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -197,7 +216,7 @@ public interface HeroDetails extends GraphqlFragment {
       return this.primaryFunction;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -275,6 +294,9 @@ public interface HeroDetails extends GraphqlFragment {
     }
   }
 
+  /**
+   * A connection object for a character's friends
+   */
   class FriendsConnection1 implements FriendsConnection {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -341,7 +363,7 @@ public interface HeroDetails extends GraphqlFragment {
       return this.isEmpty;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -444,6 +466,9 @@ public interface HeroDetails extends GraphqlFragment {
     }
   }
 
+  /**
+   * An edge object for a character's friends
+   */
   class Edge1 implements Edge {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -476,7 +501,7 @@ public interface HeroDetails extends GraphqlFragment {
       return this.node;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -542,6 +567,9 @@ public interface HeroDetails extends GraphqlFragment {
     }
   }
 
+  /**
+   * A character from the Star Wars universe
+   */
   class Node1 implements Node {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -574,7 +602,7 @@ public interface HeroDetails extends GraphqlFragment {
       return this.name;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -633,6 +661,9 @@ public interface HeroDetails extends GraphqlFragment {
     }
   }
 
+  /**
+   * Information for paginating this connection
+   */
   class PageInfo1 implements PageInfo {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -662,7 +693,7 @@ public interface HeroDetails extends GraphqlFragment {
       return this.hasNextPage;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -765,7 +796,7 @@ public interface HeroDetails extends GraphqlFragment {
       return this.friendsConnection;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -837,6 +868,9 @@ public interface HeroDetails extends GraphqlFragment {
     }
   }
 
+  /**
+   * A connection object for a character's friends
+   */
   class FriendsConnection2 implements FriendsConnection {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -903,7 +937,7 @@ public interface HeroDetails extends GraphqlFragment {
       return this.isEmpty;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -1006,6 +1040,9 @@ public interface HeroDetails extends GraphqlFragment {
     }
   }
 
+  /**
+   * An edge object for a character's friends
+   */
   class Edge2 implements Edge {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -1038,7 +1075,7 @@ public interface HeroDetails extends GraphqlFragment {
       return this.node;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -1104,6 +1141,9 @@ public interface HeroDetails extends GraphqlFragment {
     }
   }
 
+  /**
+   * A character from the Star Wars universe
+   */
   class Node2 implements Node {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -1136,7 +1176,7 @@ public interface HeroDetails extends GraphqlFragment {
       return this.name;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -1195,6 +1235,9 @@ public interface HeroDetails extends GraphqlFragment {
     }
   }
 
+  /**
+   * Information for paginating this connection
+   */
   class PageInfo2 implements PageInfo {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
@@ -1224,7 +1267,7 @@ public interface HeroDetails extends GraphqlFragment {
       return this.hasNextPage;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override

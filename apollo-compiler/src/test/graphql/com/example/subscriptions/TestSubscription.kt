@@ -5,15 +5,21 @@
 //
 package com.example.subscriptions
 
-import com.apollographql.apollo.api.InputFieldMarshaller
 import com.apollographql.apollo.api.Operation
 import com.apollographql.apollo.api.OperationName
+import com.apollographql.apollo.api.Response
 import com.apollographql.apollo.api.ResponseField
-import com.apollographql.apollo.api.ResponseFieldMapper
-import com.apollographql.apollo.api.ResponseFieldMarshaller
-import com.apollographql.apollo.api.ResponseReader
+import com.apollographql.apollo.api.ScalarTypeAdapters
+import com.apollographql.apollo.api.ScalarTypeAdapters.Companion.DEFAULT
 import com.apollographql.apollo.api.Subscription
-import com.apollographql.apollo.internal.QueryDocumentMinifier
+import com.apollographql.apollo.api.internal.InputFieldMarshaller
+import com.apollographql.apollo.api.internal.OperationRequestBodyComposer
+import com.apollographql.apollo.api.internal.QueryDocumentMinifier
+import com.apollographql.apollo.api.internal.ResponseFieldMapper
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller
+import com.apollographql.apollo.api.internal.ResponseReader
+import com.apollographql.apollo.api.internal.SimpleOperationResponseParser
+import com.apollographql.apollo.api.internal.Throws
 import kotlin.Any
 import kotlin.Array
 import kotlin.Int
@@ -21,6 +27,10 @@ import kotlin.String
 import kotlin.Suppress
 import kotlin.collections.Map
 import kotlin.jvm.Transient
+import okio.Buffer
+import okio.BufferedSource
+import okio.ByteString
+import okio.IOException
 
 @Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
     "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
@@ -30,11 +40,11 @@ data class TestSubscription(
   @Transient
   private val variables: Operation.Variables = object : Operation.Variables() {
     override fun valueMap(): Map<String, Any?> = mutableMapOf<String, Any?>().apply {
-      this["repo"] = repo
+      this["repo"] = this@TestSubscription.repo
     }
 
-    override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller { writer ->
-      writer.writeString("repo", repo)
+    override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller.invoke { writer ->
+      writer.writeString("repo", this@TestSubscription.repo)
     }
   }
 
@@ -43,12 +53,44 @@ data class TestSubscription(
   override fun wrapData(data: Data?): Data? = data
   override fun variables(): Operation.Variables = variables
   override fun name(): OperationName = OPERATION_NAME
-  override fun responseFieldMapper(): ResponseFieldMapper<Data> = ResponseFieldMapper {
+  override fun responseFieldMapper(): ResponseFieldMapper<Data> = ResponseFieldMapper.invoke {
     Data(it)
   }
 
+  @Throws(IOException::class)
+  override fun parse(source: BufferedSource, scalarTypeAdapters: ScalarTypeAdapters): Response<Data>
+      = SimpleOperationResponseParser.parse(source, this, scalarTypeAdapters)
+
+  @Throws(IOException::class)
+  override fun parse(byteString: ByteString, scalarTypeAdapters: ScalarTypeAdapters): Response<Data>
+      = parse(Buffer().write(byteString), scalarTypeAdapters)
+
+  @Throws(IOException::class)
+  override fun parse(source: BufferedSource): Response<Data> = parse(source, DEFAULT)
+
+  @Throws(IOException::class)
+  override fun parse(byteString: ByteString): Response<Data> = parse(byteString, DEFAULT)
+
+  override fun composeRequestBody(scalarTypeAdapters: ScalarTypeAdapters): ByteString =
+      OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = false,
+    withQueryDocument = true,
+    scalarTypeAdapters = scalarTypeAdapters
+  )
+
+  override fun composeRequestBody(): ByteString = OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = false,
+    withQueryDocument = true,
+    scalarTypeAdapters = DEFAULT
+  )
+
+  /**
+   * A comment about an entry, submitted by a user
+   */
   data class CommentAdded(
-    val __typename: String,
+    val __typename: String = "Comment",
     /**
      * The SQL ID of this entry
      */
@@ -58,10 +100,10 @@ data class TestSubscription(
      */
     val content: String
   ) {
-    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeString(RESPONSE_FIELDS[0], __typename)
-      it.writeInt(RESPONSE_FIELDS[1], id)
-      it.writeString(RESPONSE_FIELDS[2], content)
+    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeString(RESPONSE_FIELDS[0], this@CommentAdded.__typename)
+      writer.writeInt(RESPONSE_FIELDS[1], this@CommentAdded.id)
+      writer.writeString(RESPONSE_FIELDS[2], this@CommentAdded.content)
     }
 
     companion object {
@@ -71,27 +113,33 @@ data class TestSubscription(
           ResponseField.forString("content", "content", null, false, null)
           )
 
-      operator fun invoke(reader: ResponseReader): CommentAdded {
-        val __typename = reader.readString(RESPONSE_FIELDS[0])
-        val id = reader.readInt(RESPONSE_FIELDS[1])
-        val content = reader.readString(RESPONSE_FIELDS[2])
-        return CommentAdded(
+      operator fun invoke(reader: ResponseReader): CommentAdded = reader.run {
+        val __typename = readString(RESPONSE_FIELDS[0])!!
+        val id = readInt(RESPONSE_FIELDS[1])!!
+        val content = readString(RESPONSE_FIELDS[2])!!
+        CommentAdded(
           __typename = __typename,
           id = id,
           content = content
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<CommentAdded> = ResponseFieldMapper { invoke(it) }
     }
   }
 
+  /**
+   * Data from the response after executing this GraphQL operation
+   */
   data class Data(
     /**
      * Subscription fires on every comment added
      */
     val commentAdded: CommentAdded?
   ) : Operation.Data {
-    override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeObject(RESPONSE_FIELDS[0], commentAdded?.marshaller())
+    override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeObject(RESPONSE_FIELDS[0], this@Data.commentAdded?.marshaller())
     }
 
     companion object {
@@ -102,15 +150,17 @@ data class TestSubscription(
               "variableName" to "repo")), true, null)
           )
 
-      operator fun invoke(reader: ResponseReader): Data {
-        val commentAdded = reader.readObject<CommentAdded>(RESPONSE_FIELDS[0]) { reader ->
+      operator fun invoke(reader: ResponseReader): Data = reader.run {
+        val commentAdded = readObject<CommentAdded>(RESPONSE_FIELDS[0]) { reader ->
           CommentAdded(reader)
         }
-
-        return Data(
+        Data(
           commentAdded = commentAdded
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<Data> = ResponseFieldMapper { invoke(it) }
     }
   }
 
@@ -130,6 +180,8 @@ data class TestSubscription(
           """.trimMargin()
         )
 
-    val OPERATION_NAME: OperationName = OperationName { "TestSubscription" }
+    val OPERATION_NAME: OperationName = object : OperationName {
+      override fun name(): String = "TestSubscription"
+    }
   }
 }

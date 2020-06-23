@@ -5,19 +5,19 @@ import com.apollographql.apollo.api.Input;
 import com.apollographql.apollo.api.InputType;
 import com.apollographql.apollo.api.Operation;
 import com.apollographql.apollo.api.Query;
+import com.apollographql.apollo.api.ScalarTypeAdapters;
 import com.apollographql.apollo.api.cache.http.HttpCache;
 import com.apollographql.apollo.api.cache.http.HttpCachePolicy;
+import com.apollographql.apollo.api.internal.ApolloLogger;
 import com.apollographql.apollo.api.internal.Optional;
+import com.apollographql.apollo.api.internal.json.InputFieldJsonWriter;
+import com.apollographql.apollo.api.internal.json.JsonWriter;
 import com.apollographql.apollo.cache.ApolloCacheHeaders;
 import com.apollographql.apollo.cache.CacheHeaders;
 import com.apollographql.apollo.exception.ApolloNetworkException;
 import com.apollographql.apollo.interceptor.ApolloInterceptor;
 import com.apollographql.apollo.interceptor.ApolloInterceptorChain;
-import com.apollographql.apollo.internal.ApolloLogger;
-import com.apollographql.apollo.internal.json.InputFieldJsonWriter;
-import com.apollographql.apollo.internal.json.JsonWriter;
 import com.apollographql.apollo.request.RequestHeaders;
-import com.apollographql.apollo.response.ScalarTypeAdapters;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.HttpUrl;
@@ -130,8 +130,9 @@ public final class ApolloServerInterceptor implements ApolloInterceptor {
     httpCall.enqueue(new Callback() {
       @Override
       public void onFailure(@NotNull Call call, @NotNull IOException e) {
-        if (httpCallRef.compareAndSet(call, null)) {
-          if (disposed) return;
+        if (disposed) return;
+
+        if (httpCallRef.compareAndSet(httpCall, null)) {
           logger.e(e, "Failed to execute http call for operation %s", request.operation.name().name());
           callBack.onFailure(new ApolloNetworkException("Failed to execute http call", e));
         }
@@ -139,8 +140,9 @@ public final class ApolloServerInterceptor implements ApolloInterceptor {
 
       @Override
       public void onResponse(@NotNull Call call, @NotNull Response response) {
-        if (httpCallRef.compareAndSet(call, null)) {
-          if (disposed) return;
+        if (disposed) return;
+
+        if (httpCallRef.compareAndSet(httpCall, null)) {
           callBack.onResponse(new ApolloInterceptor.InterceptorResponse(response));
           callBack.onCompleted();
         }
@@ -207,30 +209,11 @@ public final class ApolloServerInterceptor implements ApolloInterceptor {
 
   static ByteString httpPostRequestBody(Operation operation, ScalarTypeAdapters scalarTypeAdapters,
       boolean writeQueryDocument, boolean autoPersistQueries) throws IOException {
-    Buffer buffer = new Buffer();
-    JsonWriter jsonWriter = JsonWriter.of(buffer);
-    jsonWriter.setSerializeNulls(true);
-    jsonWriter.beginObject();
-    jsonWriter.name("operationName").value(operation.name().name());
-    jsonWriter.name("variables").beginObject();
-    operation.variables().marshaller().marshal(new InputFieldJsonWriter(jsonWriter, scalarTypeAdapters));
-    jsonWriter.endObject();
-    if (autoPersistQueries) {
-      jsonWriter.name("extensions")
-          .beginObject()
-          .name("persistedQuery")
-          .beginObject()
-          .name("version").value(1)
-          .name("sha256Hash").value(operation.operationId())
-          .endObject()
-          .endObject();
+    if (operation instanceof Query) {
+      return ((Query) operation).composeRequestBody(autoPersistQueries, writeQueryDocument, scalarTypeAdapters);
+    } else {
+      return operation.composeRequestBody(scalarTypeAdapters);
     }
-    if (!autoPersistQueries || writeQueryDocument) {
-      jsonWriter.name("query").value(operation.queryDocument());
-    }
-    jsonWriter.endObject();
-    jsonWriter.close();
-    return buffer.readByteString();
   }
 
   static HttpUrl httpGetUrl(HttpUrl serverUrl, Operation operation,
@@ -296,14 +279,14 @@ public final class ApolloServerInterceptor implements ApolloInterceptor {
     } else if (value instanceof FileUpload) {
       FileUpload upload = (FileUpload) value;
       String key = variableName;
-      allUploads.add(new FileUploadMeta(key, upload.mimetype, upload.file));
+      allUploads.add(new FileUploadMeta(key, upload.getMimetype(), new File(upload.getFilePath())));
       System.out.println(key);
     } else if (value instanceof FileUpload[]) {
       int varFileIndex = 0;
       FileUpload[] uploads = (FileUpload[]) value;
       for (FileUpload upload : uploads) {
         String key = variableName + "." + varFileIndex;
-        allUploads.add(new FileUploadMeta(key, upload.mimetype, upload.file));
+        allUploads.add(new FileUploadMeta(key, upload.getMimetype(), new File(upload.getFilePath())));
         System.out.println(key);
         varFileIndex++;
       }

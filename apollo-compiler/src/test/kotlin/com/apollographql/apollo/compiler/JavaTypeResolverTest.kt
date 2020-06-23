@@ -6,19 +6,20 @@ import com.squareup.javapoet.ClassName
 import com.squareup.javapoet.TypeName
 import org.junit.Assert
 import org.junit.Test
-import java.util.*
+import java.util.Date
 
 class JavaTypeResolverTest {
-  private val packageNameProvider = DeprecatedPackageNameProvider(
-      rootPackageName = "",
-      outputPackageName = null,
-      schemaPackageName = ""
-  )
+  private val packageNameProvider = object : PackageNameProvider {
+    override val fragmentsPackageName: String = ""
+    override val typesPackageName: String = ""
+    override fun operationPackageName(filePath: String): String = ""
+  }
   private val defaultContext = CodeGenerationContext(
       reservedTypeNames = emptyList(),
       typeDeclarations = emptyList(),
       packageNameProvider = packageNameProvider,
       customTypeMap = emptyMap(),
+      operationIdGenerator = OperationIdGenerator.Sha256(),
       nullableValueType = NullableValueType.APOLLO_OPTIONAL,
       ir = CodeGenerationIR(emptyList(), emptyList(), emptyList()),
       useSemanticNaming = false,

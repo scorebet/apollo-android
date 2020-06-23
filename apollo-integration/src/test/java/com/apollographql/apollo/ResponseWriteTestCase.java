@@ -1,5 +1,7 @@
 package com.apollographql.apollo;
 
+import com.apollographql.apollo.api.CustomTypeAdapter;
+import com.apollographql.apollo.api.CustomTypeValue;
 import com.apollographql.apollo.api.Input;
 import com.apollographql.apollo.api.Query;
 import com.apollographql.apollo.api.Response;
@@ -16,9 +18,10 @@ import com.apollographql.apollo.integration.normalizer.fragment.HeroWithFriendsF
 import com.apollographql.apollo.integration.normalizer.fragment.HumanWithIdFragment;
 import com.apollographql.apollo.integration.normalizer.type.CustomType;
 import com.apollographql.apollo.integration.normalizer.type.Episode;
-import com.apollographql.apollo.response.CustomTypeAdapter;
-import com.apollographql.apollo.response.CustomTypeValue;
-
+import io.reactivex.functions.Predicate;
+import okhttp3.Dispatcher;
+import okhttp3.OkHttpClient;
+import okhttp3.mockwebserver.MockWebServer;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -28,11 +31,6 @@ import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Date;
 import java.util.Locale;
-
-import io.reactivex.functions.Predicate;
-import okhttp3.Dispatcher;
-import okhttp3.OkHttpClient;
-import okhttp3.mockwebserver.MockWebServer;
 
 import static com.apollographql.apollo.fetcher.ApolloResponseFetchers.CACHE_ONLY;
 import static com.apollographql.apollo.integration.normalizer.type.Episode.JEDI;
@@ -100,7 +98,7 @@ public class ResponseWriteTestCase {
         DATE_TIME_FORMAT.parse("1985-04-16"),
         Collections.<Date>emptyList()
     );
-    apolloClient.apolloStore().write(query, new EpisodeHeroWithDatesQuery.Data(hero)).execute();
+    apolloClient.getApolloStore().write(query, new EpisodeHeroWithDatesQuery.Data(hero)).execute();
 
     assertCachedQueryResponse(
         query,
@@ -124,7 +122,7 @@ public class ResponseWriteTestCase {
             DATE_TIME_FORMAT.parse("2017-05-16")
         )
     );
-    apolloClient.apolloStore().write(query, new EpisodeHeroWithDatesQuery.Data(hero)).execute();
+    apolloClient.getApolloStore().write(query, new EpisodeHeroWithDatesQuery.Data(hero)).execute();
 
     assertCachedQueryResponse(
         query,
@@ -170,7 +168,7 @@ public class ResponseWriteTestCase {
         Episode.JEDI,
         Collections.<Episode>emptyList()
     );
-    apolloClient.apolloStore().write(query, new HeroNameWithEnumsQuery.Data(hero)).execute();
+    apolloClient.getApolloStore().write(query, new HeroNameWithEnumsQuery.Data(hero)).execute();
 
     assertCachedQueryResponse(
         query,
@@ -191,7 +189,7 @@ public class ResponseWriteTestCase {
         Episode.JEDI,
         asList(Episode.EMPIRE)
     );
-    apolloClient.apolloStore().write(query, new HeroNameWithEnumsQuery.Data(hero)).execute();
+    apolloClient.getApolloStore().write(query, new HeroNameWithEnumsQuery.Data(hero)).execute();
 
     assertCachedQueryResponse(
         query,
@@ -242,7 +240,7 @@ public class ResponseWriteTestCase {
         "R222-D222",
         null
     );
-    apolloClient.apolloStore().write(query, new HeroAndFriendsNamesWithIDsQuery.Data(hero)).execute();
+    apolloClient.getApolloStore().write(query, new HeroAndFriendsNamesWithIDsQuery.Data(hero)).execute();
 
     assertCachedQueryResponse(
         query,
@@ -268,7 +266,7 @@ public class ResponseWriteTestCase {
         "R222-D222",
         singletonList(friend)
     );
-    apolloClient.apolloStore().write(query, new HeroAndFriendsNamesWithIDsQuery.Data(hero)).execute();
+    apolloClient.getApolloStore().write(query, new HeroAndFriendsNamesWithIDsQuery.Data(hero)).execute();
 
     assertCachedQueryResponse(
         query,
@@ -348,7 +346,7 @@ public class ResponseWriteTestCase {
             )
         )
     );
-    apolloClient.apolloStore().write(query, new HeroAndFriendsWithFragmentsQuery.Data(hero)).execute();
+    apolloClient.getApolloStore().write(query, new HeroAndFriendsWithFragmentsQuery.Data(hero)).execute();
 
     assertCachedQueryResponse(
         query,
@@ -424,7 +422,7 @@ public class ResponseWriteTestCase {
             )
         )
     );
-    apolloClient.apolloStore().write(query, new EpisodeHeroWithInlineFragmentQuery.Data(hero)).execute();
+    apolloClient.getApolloStore().write(query, new EpisodeHeroWithInlineFragmentQuery.Data(hero)).execute();
 
     assertCachedQueryResponse(
         query,
@@ -479,7 +477,7 @@ public class ResponseWriteTestCase {
         }
     );
 
-    apolloClient.apolloStore().write(
+    apolloClient.getApolloStore().write(
         new HeroWithFriendsFragment(
             "Droid",
             "2001",
@@ -509,7 +507,7 @@ public class ResponseWriteTestCase {
         ), CacheKey.from("2001"), query.variables()
     ).execute();
 
-    apolloClient.apolloStore().write(
+    apolloClient.getApolloStore().write(
         new HumanWithIdFragment(
             "Human",
             "1002",
@@ -563,7 +561,7 @@ public class ResponseWriteTestCase {
         "SuperRocket",
         asList(asList(900d, 800d), asList(700d, 600d))
     );
-    apolloClient.apolloStore().write(query, new StarshipByIdQuery.Data(starship)).execute();
+    apolloClient.getApolloStore().write(query, new StarshipByIdQuery.Data(starship)).execute();
 
     assertCachedQueryResponse(
         query,

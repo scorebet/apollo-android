@@ -19,11 +19,13 @@ class CustomEnumTypeSpecBuilder(
           .build()
 
   private fun TypeSpec.Builder.addEnumConstants(): TypeSpec.Builder {
-    context.customTypeMap.forEach { mapping ->
-      val constantName = mapping.key.removeSuffix("!").toUpperCase(Locale.ENGLISH)
-      val javaTypeName = mapping.value
-      addEnumConstant(constantName, scalarMappingTypeSpec(mapping.key, javaTypeName))
-    }
+    context.customTypeMap
+        .toSortedMap()
+        .forEach { mapping ->
+          val constantName = mapping.key.removeSuffix("!").toUpperCase(Locale.ENGLISH)
+          val javaTypeName = mapping.value
+          addEnumConstant(constantName, scalarMappingTypeSpec(mapping.key, javaTypeName))
+        }
     return this
   }
 
@@ -35,7 +37,7 @@ class CustomEnumTypeSpecBuilder(
               .returns(java.lang.String::class.java)
               .addStatement("return \$S", scalarType)
               .build())
-          .addMethod(MethodSpec.methodBuilder("javaType")
+          .addMethod(MethodSpec.methodBuilder("className")
               .addModifiers(Modifier.PUBLIC)
               .apply {
                 if (context.suppressRawTypesWarning) {
@@ -43,8 +45,8 @@ class CustomEnumTypeSpecBuilder(
                 }
               }
               .addAnnotation(Override::class.java)
-              .returns(Class::class.java)
-              .addStatement("return \$T.class", javaTypeName.toJavaType())
+              .returns(String::class.java)
+              .addStatement("return \$S", javaTypeName)
               .build())
           .build()
 

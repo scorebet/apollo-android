@@ -1,6 +1,5 @@
 package com.apollographql.apollo.compiler.ast.builder
 
-import com.apollographql.apollo.compiler.applyIf
 import com.apollographql.apollo.compiler.ast.CustomTypes
 import com.apollographql.apollo.compiler.ast.EnumType
 import com.apollographql.apollo.compiler.ast.ObjectType
@@ -8,11 +7,11 @@ import com.apollographql.apollo.compiler.ast.TypeRef
 import com.apollographql.apollo.compiler.escapeKotlinReservedWord
 import com.apollographql.apollo.compiler.ir.Field
 import com.apollographql.apollo.compiler.ir.Fragment
+import com.apollographql.apollo.compiler.ir.FragmentRef
 import com.apollographql.apollo.compiler.ir.InlineFragment
 import com.apollographql.apollo.compiler.singularize
 
 internal class Context(
-    reservedObjectTypeRef: TypeRef?,
     val customTypeMap: CustomTypes,
     val enums: List<EnumType>,
     val typesPackageName: String,
@@ -21,29 +20,38 @@ internal class Context(
     private val objectTypeContainer: MutableMap<TypeRef, ObjectType> = LinkedHashMap()
 ) : Map<TypeRef, ObjectType> by objectTypeContainer {
 
-  private val reservedObjectTypeRefs = HashSet<TypeRef>().applyIf(reservedObjectTypeRef != null) {
-    add(reservedObjectTypeRef!!)
-  }
+  private val reservedObjectTypeRefs = HashSet<TypeRef>()
 
   fun registerObjectType(
       name: String,
       schemaTypeName: String,
-      fragmentSpreads: List<String>,
+      description: String,
+      fragmentRefs: List<FragmentRef>,
       inlineFragments: List<InlineFragment>,
       fields: List<Field>,
       kind: ObjectType.Kind,
       singularize: Boolean = true
   ): TypeRef {
-    val inlineFragmentField = inlineFragments.takeIf { it.isNotEmpty() }?.inlineFragmentField(
-        type = name,
-        schemaType = schemaTypeName,
-        context = this
-    )
-    val (fragmentsField, fragmentsObjectType) = fragmentSpreads
-        .map { fragments[it] ?: throw IllegalArgumentException("Unable to find fragment definition: $it") }
+    val inlineFragmentFields = if (inlineFragments.isNotEmpty()) {
+      val inlineFragmentSuper = registerInlineFragmentSuper(
+          type = name,
+          schemaType = schemaTypeName
+      )
+
+      inlineFragments.map {
+        it.inlineFragmentField(
+            context = this,
+            fragmentSuper = inlineFragmentSuper
+        )
+      }
+    } else emptyList()
+    val (fragmentsField, fragmentsObjectType) = fragmentRefs
+        .associateWith { fragmentRef ->
+          fragments[fragmentRef.name] ?: throw IllegalArgumentException("Unable to find fragment definition: ${fragmentRef.name}")
+        }
         .astFragmentsObjectFieldType(
             fragmentsPackage = fragmentsPackage,
-            isOptional = { typeCondition != schemaTypeName }
+            parentFieldSchemaTypeName = schemaTypeName
         )
 
     val normalizedClassName = name.escapeKotlinReservedWord().let { originalClassName ->
@@ -61,9 +69,10 @@ internal class Context(
     objectTypeContainer[uniqueTypeRef] = ObjectType(
         name = uniqueTypeRef.name,
         schemaTypeName = schemaTypeName,
+        description = description,
         fields = fields.map { it.ast(this) }
             .let { if (fragmentsField != null) it + fragmentsField else it }
-            .let { if (inlineFragmentField != null) it + inlineFragmentField else it },
+            + inlineFragmentFields,
         fragmentsType = fragmentsObjectType,
         kind = kind
     )

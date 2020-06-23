@@ -7,8 +7,9 @@ package com.example.fragment_used_twice.fragment
 
 import com.apollographql.apollo.api.GraphqlFragment
 import com.apollographql.apollo.api.ResponseField
-import com.apollographql.apollo.api.ResponseFieldMarshaller
-import com.apollographql.apollo.api.ResponseReader
+import com.apollographql.apollo.api.internal.ResponseFieldMapper
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller
+import com.apollographql.apollo.api.internal.ResponseReader
 import com.example.fragment_used_twice.type.CustomType
 import kotlin.Any
 import kotlin.Array
@@ -18,7 +19,7 @@ import kotlin.Suppress
 @Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
     "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
 data class CharacterDetails(
-  val __typename: String,
+  val __typename: String = "Character",
   /**
    * The name of the character
    */
@@ -28,10 +29,11 @@ data class CharacterDetails(
    */
   val birthDate: Any
 ) : GraphqlFragment {
-  override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-    it.writeString(RESPONSE_FIELDS[0], __typename)
-    it.writeString(RESPONSE_FIELDS[1], name)
-    it.writeCustom(RESPONSE_FIELDS[2] as ResponseField.CustomTypeField, birthDate)
+  override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+    writer.writeString(RESPONSE_FIELDS[0], this@CharacterDetails.__typename)
+    writer.writeString(RESPONSE_FIELDS[1], this@CharacterDetails.name)
+    writer.writeCustom(RESPONSE_FIELDS[2] as ResponseField.CustomTypeField,
+        this@CharacterDetails.birthDate)
   }
 
   companion object {
@@ -49,18 +51,18 @@ data class CharacterDetails(
         |}
         """.trimMargin()
 
-    val POSSIBLE_TYPES: Array<String> = arrayOf("Human", "Droid")
-
-    operator fun invoke(reader: ResponseReader): CharacterDetails {
-      val __typename = reader.readString(RESPONSE_FIELDS[0])
-      val name = reader.readString(RESPONSE_FIELDS[1])
-      val birthDate = reader.readCustomType<Any>(RESPONSE_FIELDS[2] as
-          ResponseField.CustomTypeField)
-      return CharacterDetails(
+    operator fun invoke(reader: ResponseReader): CharacterDetails = reader.run {
+      val __typename = readString(RESPONSE_FIELDS[0])!!
+      val name = readString(RESPONSE_FIELDS[1])!!
+      val birthDate = readCustomType<Any>(RESPONSE_FIELDS[2] as ResponseField.CustomTypeField)!!
+      CharacterDetails(
         __typename = __typename,
         name = name,
         birthDate = birthDate
       )
     }
+
+    @Suppress("FunctionName")
+    fun Mapper(): ResponseFieldMapper<CharacterDetails> = ResponseFieldMapper { invoke(it) }
   }
 }

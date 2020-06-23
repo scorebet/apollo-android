@@ -5,19 +5,16 @@ import com.apollographql.apollo.api.cache.http.HttpCache;
 import com.apollographql.apollo.api.cache.http.HttpCacheRecord;
 import com.apollographql.apollo.api.cache.http.HttpCacheRecordEditor;
 import com.apollographql.apollo.api.cache.http.HttpCacheStore;
-import com.apollographql.apollo.api.internal.Optional;
-import com.apollographql.apollo.internal.ApolloLogger;
-
-import java.io.IOException;
-
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-
+import com.apollographql.apollo.api.internal.ApolloLogger;
 import okhttp3.Interceptor;
 import okhttp3.Response;
 import okio.ForwardingSource;
 import okio.Sink;
 import okio.Source;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.io.IOException;
 
 import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
 import static com.apollographql.apollo.cache.http.Utils.copyResponseBody;
@@ -35,7 +32,7 @@ public final class ApolloHttpCache implements HttpCache {
 
   public ApolloHttpCache(@NotNull final HttpCacheStore cacheStore, @Nullable final Logger logger) {
     this.cacheStore = checkNotNull(cacheStore, "cacheStore == null");
-    this.logger = new ApolloLogger(Optional.fromNullable(logger));
+    this.logger = new ApolloLogger(logger);
   }
 
   @Override public void clear() {
@@ -86,6 +83,7 @@ public final class ApolloHttpCache implements HttpCache {
       String contentType = response.header("Content-Type");
       String contentLength = response.header("Content-Length");
       return response.newBuilder()
+          .addHeader(FROM_CACHE, "true")
           .body(new CacheResponseBody(cacheResponseSource, contentType, contentLength))
           .build();
     } catch (Exception e) {

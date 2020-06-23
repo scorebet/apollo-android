@@ -2,23 +2,27 @@ package com.apollographql.apollo;
 
 import com.apollographql.apollo.api.Input;
 import com.apollographql.apollo.api.Response;
-import com.apollographql.apollo.api.internal.Optional;
 import com.apollographql.apollo.cache.CacheHeaders;
 import com.apollographql.apollo.cache.normalized.Record;
+import com.apollographql.apollo.cache.normalized.internal.Transaction;
+import com.apollographql.apollo.cache.normalized.internal.WriteableStore;
 import com.apollographql.apollo.cache.normalized.lru.EvictionPolicy;
 import com.apollographql.apollo.cache.normalized.lru.LruNormalizedCacheFactory;
 import com.apollographql.apollo.exception.ApolloException;
 import com.apollographql.apollo.integration.normalizer.EpisodeHeroNameQuery;
 import com.apollographql.apollo.integration.normalizer.HeroAndFriendsNamesWithIDsQuery;
 import com.apollographql.apollo.integration.normalizer.type.Episode;
-import com.apollographql.apollo.internal.cache.normalized.Transaction;
-import com.apollographql.apollo.internal.cache.normalized.WriteableStore;
-
+import io.reactivex.functions.Predicate;
 import junit.framework.Assert;
-
+import okhttp3.Dispatcher;
+import okhttp3.OkHttpClient;
+import okhttp3.mockwebserver.MockWebServer;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.mockito.InOrder;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -27,18 +31,16 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
 
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-
-import io.reactivex.functions.Predicate;
-import okhttp3.Dispatcher;
-import okhttp3.OkHttpClient;
-import okhttp3.mockwebserver.MockWebServer;
-
+import static com.apollographql.apollo.ApolloCall.StatusEvent.COMPLETED;
+import static com.apollographql.apollo.ApolloCall.StatusEvent.FETCH_CACHE;
+import static com.apollographql.apollo.ApolloCall.StatusEvent.FETCH_NETWORK;
+import static com.apollographql.apollo.ApolloCall.StatusEvent.SCHEDULED;
 import static com.apollographql.apollo.fetcher.ApolloResponseFetchers.CACHE_ONLY;
 import static com.apollographql.apollo.fetcher.ApolloResponseFetchers.NETWORK_ONLY;
 import static com.google.common.truth.Truth.assertThat;
 import static junit.framework.Assert.fail;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 
 public class ApolloWatcherTest {
   private ApolloClient apolloClient;
@@ -55,12 +57,11 @@ public class ApolloWatcherTest {
         .okHttpClient(okHttpClient)
         .logger(new Logger() {
           @Override
-          public void log(int priority, @NotNull String message, @NotNull Optional<Throwable> t, @NotNull Object... args) {
-            String throwableTrace = "";
-            if (t.isPresent()) {
-              throwableTrace = t.get().getMessage();
+          public void log(int priority, @NotNull String message, @Nullable Throwable t, @NotNull Object... args) {
+            System.out.println(String.format(message, args));
+            if (t != null) {
+              t.printStackTrace();
             }
-            System.out.println(String.format(message, args) + " " + throwableTrace);
           }
         })
         .normalizedCache(new LruNormalizedCacheFactory(EvictionPolicy.NO_EVICTION), new IdFieldCacheKeyResolver())
@@ -126,7 +127,7 @@ public class ApolloWatcherTest {
     assertThat(heroNameList.get(0)).isEqualTo("R2-D2");
 
     // Someone writes to the store directly
-    Set<String> changedKeys = apolloClient.apolloStore().writeTransaction(new Transaction<WriteableStore, Set<String>>() {
+    Set<String> changedKeys = apolloClient.getApolloStore().writeTransaction(new Transaction<WriteableStore, Set<String>>() {
       @Nullable @Override public Set<String> execute(WriteableStore cache) {
         Record record = Record.builder("2001")
             .addField("name", "Artoo")
@@ -134,7 +135,7 @@ public class ApolloWatcherTest {
         return cache.merge(Collections.singletonList(record), CacheHeaders.NONE);
       }
     });
-    apolloClient.apolloStore().publish(changedKeys);
+    apolloClient.getApolloStore().publish(changedKeys);
 
     assertThat(heroNameList.get(1)).isEqualTo("Artoo");
 
@@ -371,5 +372,22 @@ public class ApolloWatcherTest {
 
     assertThat(watchedHeroes).hasSize(1);
     assertThat(watchedHeroes.get(0).name()).isEqualTo("R2-D2");
+  }
+
+  @SuppressWarnings("unchecked") @Test
+  public void queryWatcher_onStatusEvent_properlyCalled() throws Exception {
+    EpisodeHeroNameQuery query = EpisodeHeroNameQuery.builder().episode(Episode.EMPIRE).build();
+    server.enqueue(Utils.INSTANCE.mockResponse("EpisodeHeroNameResponseWithId.json"));
+
+    ApolloQueryWatcher<EpisodeHeroNameQuery.Data> watcher = apolloClient.query(query).watcher();
+
+    ApolloCall.Callback<EpisodeHeroNameQuery.Data> callback = mock(ApolloCall.Callback.class);
+    watcher.enqueueAndWatch(callback);
+
+    InOrder inOrder = inOrder(callback);
+    inOrder.verify(callback).onStatusEvent(SCHEDULED);
+    inOrder.verify(callback).onStatusEvent(FETCH_CACHE);
+    inOrder.verify(callback).onStatusEvent(FETCH_NETWORK);
+    inOrder.verify(callback).onStatusEvent(COMPLETED);
   }
 }

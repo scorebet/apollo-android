@@ -1,10 +1,10 @@
 package com.apollographql.apollo.kotlinsample.commits
 
-import android.support.v7.widget.RecyclerView
 import android.view.LayoutInflater
 import android.view.View
 import android.view.View.VISIBLE
 import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
 import com.apollographql.apollo.kotlinsample.GithubRepositoryCommitsQuery
 import com.apollographql.apollo.kotlinsample.R
 import kotlinx.android.synthetic.main.item_commit.view.*
@@ -34,14 +34,10 @@ class CommitsAdapter : RecyclerView.Adapter<CommitsAdapter.ViewHolder>() {
   class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
     fun bind(commit: GithubRepositoryCommitsQuery.Edge) {
       itemView.run {
-        tvCommitSha1.text = commit.node()?.abbreviatedOid()
-        val headline = "${commit.node()?.author()?.email()}: ${commit.node()?.messageHeadline()}"
-        if (headline == null) {
-          tvCommitMessage.visibility = View.GONE
-        } else {
-          tvCommitMessage.visibility = VISIBLE
-          tvCommitMessage.text = headline
-        }
+        tvCommitSha1.text = commit.node?.abbreviatedOid
+        val headline = "${commit.node?.author?.email}: ${commit.node?.messageHeadline}"
+        tvCommitMessage.visibility = VISIBLE
+        tvCommitMessage.text = headline
       }
     }
   }

@@ -7,19 +7,17 @@ package com.example.fragment_used_twice.fragment;
 
 import com.apollographql.apollo.api.GraphqlFragment;
 import com.apollographql.apollo.api.ResponseField;
-import com.apollographql.apollo.api.ResponseFieldMapper;
-import com.apollographql.apollo.api.ResponseFieldMarshaller;
-import com.apollographql.apollo.api.ResponseReader;
-import com.apollographql.apollo.api.ResponseWriter;
+import com.apollographql.apollo.api.internal.ResponseFieldMapper;
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller;
+import com.apollographql.apollo.api.internal.ResponseReader;
+import com.apollographql.apollo.api.internal.ResponseWriter;
 import com.apollographql.apollo.api.internal.Utils;
 import com.example.fragment_used_twice.type.CustomType;
 import java.lang.Object;
 import java.lang.Override;
 import java.lang.String;
 import java.lang.SuppressWarnings;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 import org.jetbrains.annotations.NotNull;
 
 public class CharacterDetails implements GraphqlFragment {
@@ -34,8 +32,6 @@ public class CharacterDetails implements GraphqlFragment {
       + "  name\n"
       + "  birthDate\n"
       + "}";
-
-  public static final List<String> POSSIBLE_TYPES = Collections.unmodifiableList(Arrays.asList( "Human", "Droid"));
 
   final @NotNull String __typename;
 
@@ -74,7 +70,7 @@ public class CharacterDetails implements GraphqlFragment {
     return this.birthDate;
   }
 
-  @SuppressWarnings("unchecked")
+  @SuppressWarnings({"rawtypes", "unchecked"})
   public ResponseFieldMarshaller marshaller() {
     return new ResponseFieldMarshaller() {
       @Override

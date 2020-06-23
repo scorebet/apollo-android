@@ -1,29 +1,29 @@
 package com.apollographql.apollo.subscription;
 
-import com.apollographql.apollo.response.CustomTypeAdapter;
+import com.apollographql.apollo.api.CustomTypeAdapter;
 import com.apollographql.apollo.api.Operation;
 import com.apollographql.apollo.api.OperationName;
-import com.apollographql.apollo.api.ResponseFieldMapper;
+import com.apollographql.apollo.api.Response;
 import com.apollographql.apollo.api.ScalarType;
+import com.apollographql.apollo.api.ScalarTypeAdapters;
 import com.apollographql.apollo.api.Subscription;
+import com.apollographql.apollo.api.internal.ResponseFieldMapper;
 import com.apollographql.apollo.api.internal.UnmodifiableMapBuilder;
-import com.apollographql.apollo.response.ScalarTypeAdapters;
-
-import org.junit.Before;
-import org.junit.Test;
-
-import java.math.BigDecimal;
-import java.util.Collections;
-import java.util.Map;
-
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-
 import okhttp3.Protocol;
 import okhttp3.Request;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
+import okio.BufferedSource;
 import okio.ByteString;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.junit.Before;
+import org.junit.Test;
+
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.util.Collections;
+import java.util.Map;
 
 import static com.google.common.truth.Truth.assertThat;
 
@@ -55,14 +55,39 @@ public class WebSocketSubscriptionTransportMessageTest {
                 .build()
         )
     );
-    assertThat(webSocketFactory.webSocket.lastSentMessage).isEqualTo("{\"type\":\"connection_init\",\"payload\":{\"param1\":true,\"param2\":\"value\"}}");
+    assertThat(webSocketFactory.webSocket.lastSentMessage)
+        .isEqualTo("{\"type\":\"connection_init\",\"payload\":{\"param1\":true,\"param2\":\"value\"}}");
   }
 
-  @Test public void startSubscription() {
+  @Test public void startSubscriptionAutoPersistSubscriptionDisabled() {
     subscriptionTransport.send(new OperationClientMessage.Start("subscriptionId", new MockSubscription(),
-        new ScalarTypeAdapters(Collections.<ScalarType, CustomTypeAdapter>emptyMap())));
-    assertThat(webSocketFactory.webSocket.lastSentMessage)
-        .isEqualTo("{\"id\":\"subscriptionId\",\"type\":\"start\",\"payload\":{\"query\":\"subscription{commentAdded{id  name}\",\"variables\":{},\"operationName\":\"SomeSubscription\"}}");
+        new ScalarTypeAdapters(Collections.<ScalarType, CustomTypeAdapter<?>>emptyMap()), false, false));
+
+    String expected = "{\"id\":\"subscriptionId\",\"type\":\"start\",\"payload\":{\"variables\":{},"
+        + "\"operationName\":\"SomeSubscription\",\"query\":\"subscription{commentAdded{id  name}\"}}";
+
+    assertThat(webSocketFactory.webSocket.lastSentMessage).isEqualTo(expected);
+  }
+
+  @Test public void startSubscriptionAutoPersistSubscriptionEnabledSendDocumentEnabled() {
+    subscriptionTransport.send(new OperationClientMessage.Start("subscriptionId", new MockSubscription(),
+        new ScalarTypeAdapters(Collections.<ScalarType, CustomTypeAdapter<?>>emptyMap()), true, true));
+
+    String expected = "{\"id\":\"subscriptionId\",\"type\":\"start\",\"payload\":{\"variables\":{},"
+        + "\"operationName\":\"SomeSubscription\",\"query\":\"subscription{commentAdded{id  name}\","
+        + "\"extensions\":{\"persistedQuery\":{\"version\":1,\"sha256Hash\":\"someId\"}}}}";
+
+    assertThat(webSocketFactory.webSocket.lastSentMessage).isEqualTo(expected);
+  }
+
+  @Test public void startSubscriptionAutoPersistSubscriptionEnabledSendDocumentDisabled() {
+    subscriptionTransport.send(new OperationClientMessage.Start("subscriptionId", new MockSubscription(),
+        new ScalarTypeAdapters(Collections.<ScalarType, CustomTypeAdapter<?>>emptyMap()), true, false));
+
+    String expected = "{\"id\":\"subscriptionId\",\"type\":\"start\",\"payload\":{\"variables\":{},"
+        + "\"operationName\":\"SomeSubscription\",\"extensions\":{\"persistedQuery\":{\"version\":1,\"sha256Hash\":\"someId\"}}}}";
+
+    assertThat(webSocketFactory.webSocket.lastSentMessage).isEqualTo(expected);
   }
 
   @Test public void stopSubscription() {
@@ -82,26 +107,38 @@ public class WebSocketSubscriptionTransportMessageTest {
 
   @SuppressWarnings("unchecked")
   @Test public void data() {
-    webSocketFactory.webSocket.listener.onMessage(webSocketFactory.webSocket, "{\"type\":\"data\",\"id\":\"subscriptionId\",\"payload\":{\"data\":{\"commentAdded\":{\"__typename\":\"Comment\",\"id\":10,\"content\":\"test10\"}}}}");
+    webSocketFactory.webSocket.listener.onMessage(
+        webSocketFactory.webSocket,
+        "{\"type\":\"data\",\"id\":\"subscriptionId\",\"payload\":{\"data\":{\"commentAdded\":"
+            + "{\"__typename\":\"Comment\",\"id\":10,\"content\":\"test10\"}}}}");
     assertThat(transportCallback.lastMessage).isInstanceOf(OperationServerMessage.Data.class);
     assertThat(((OperationServerMessage.Data) transportCallback.lastMessage).id).isEqualTo("subscriptionId");
-    assertThat((Map<String, Object>) ((Map<String, Object>) ((OperationServerMessage.Data) transportCallback.lastMessage).payload.get("data")).get("commentAdded"))
-        .containsExactlyEntriesIn(new UnmodifiableMapBuilder<String, Object>()
+    assertThat((Map<String, Object>)
+        ((Map<String, Object>) ((OperationServerMessage.Data) transportCallback.lastMessage).payload.get("data")).get("commentAdded")
+    ).containsExactlyEntriesIn(
+        new UnmodifiableMapBuilder<String, Object>()
             .put("__typename", "Comment")
             .put("id", BigDecimal.valueOf(10))
             .put("content", "test10")
             .build()
-        );
+    );
   }
 
   @Test public void connectionError() {
-    webSocketFactory.webSocket.listener.onMessage(webSocketFactory.webSocket, "{\"type\":\"connection_error\",\"payload\":{\"message\":\"Connection Error\"}}");
+    webSocketFactory.webSocket.listener.onMessage(
+        webSocketFactory.webSocket,
+        "{\"type\":\"connection_error\",\"payload\":{\"message\":\"Connection Error\"}}"
+    );
     assertThat(transportCallback.lastMessage).isInstanceOf(OperationServerMessage.ConnectionError.class);
-    assertThat(((OperationServerMessage.ConnectionError) transportCallback.lastMessage).payload).containsExactly("message", "Connection Error");
+    assertThat(((OperationServerMessage.ConnectionError) transportCallback.lastMessage).payload)
+        .containsExactly("message", "Connection Error");
   }
 
   @Test public void error() {
-    webSocketFactory.webSocket.listener.onMessage(webSocketFactory.webSocket, "{\"type\":\"error\", \"id\":\"subscriptionId\", \"payload\":{\"message\":\"Error\"}}");
+    webSocketFactory.webSocket.listener.onMessage(
+        webSocketFactory.webSocket,
+        "{\"type\":\"error\", \"id\":\"subscriptionId\", \"payload\":{\"message\":\"Error\"}}"
+    );
     assertThat(transportCallback.lastMessage).isInstanceOf(OperationServerMessage.Error.class);
     assertThat(((OperationServerMessage.Error) transportCallback.lastMessage).id).isEqualTo("subscriptionId");
     assertThat(((OperationServerMessage.Error) transportCallback.lastMessage).payload).containsExactly("message", "Error");
@@ -221,6 +258,30 @@ public class WebSocketSubscriptionTransportMessageTest {
 
     @NotNull @Override public String operationId() {
       return "someId";
+    }
+
+    @NotNull @Override public Response<Data> parse(@NotNull BufferedSource source) throws IOException {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public Response<Data> parse(@NotNull BufferedSource source, @NotNull ScalarTypeAdapters scalarTypeAdapters) {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public Response parse(@NotNull ByteString byteString) {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public Response parse(@NotNull ByteString byteString, @NotNull ScalarTypeAdapters scalarTypeAdapters) {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public ByteString composeRequestBody(@NotNull ScalarTypeAdapters scalarTypeAdapters) {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public ByteString composeRequestBody() {
+      throw new UnsupportedOperationException();
     }
   }
 }

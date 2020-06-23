@@ -5,22 +5,19 @@
 //
 package com.example.fragment_in_fragment.fragment;
 
-import com.apollographql.apollo.api.FragmentResponseFieldMapper;
 import com.apollographql.apollo.api.GraphqlFragment;
 import com.apollographql.apollo.api.ResponseField;
-import com.apollographql.apollo.api.ResponseFieldMapper;
-import com.apollographql.apollo.api.ResponseFieldMarshaller;
-import com.apollographql.apollo.api.ResponseReader;
-import com.apollographql.apollo.api.ResponseWriter;
 import com.apollographql.apollo.api.internal.Optional;
+import com.apollographql.apollo.api.internal.ResponseFieldMapper;
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller;
+import com.apollographql.apollo.api.internal.ResponseReader;
+import com.apollographql.apollo.api.internal.ResponseWriter;
 import com.apollographql.apollo.api.internal.Utils;
 import java.lang.Object;
 import java.lang.Override;
 import java.lang.String;
 import java.lang.SuppressWarnings;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -39,8 +36,6 @@ public class PilotFragment implements GraphqlFragment {
       + "    ...planetFragment\n"
       + "  }\n"
       + "}";
-
-  public static final List<String> POSSIBLE_TYPES = Collections.unmodifiableList(Arrays.asList( "Person"));
 
   final @NotNull String __typename;
 
@@ -79,7 +74,7 @@ public class PilotFragment implements GraphqlFragment {
     return this.homeworld;
   }
 
-  @SuppressWarnings("unchecked")
+  @SuppressWarnings({"rawtypes", "unchecked"})
   public ResponseFieldMarshaller marshaller() {
     return new ResponseFieldMarshaller() {
       @Override
@@ -150,10 +145,14 @@ public class PilotFragment implements GraphqlFragment {
     }
   }
 
+  /**
+   * A large mass, planet or planetoid in the Star Wars Universe, at the time of
+   * 0 ABY.
+   */
   public static class Homeworld {
     static final ResponseField[] $responseFields = {
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
-      ResponseField.forFragment("__typename", "__typename", Arrays.asList("Planet"))
+      ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList())
     };
 
     final @NotNull String __typename;
@@ -179,7 +178,7 @@ public class PilotFragment implements GraphqlFragment {
       return this.fragments;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public ResponseFieldMarshaller marshaller() {
       return new ResponseFieldMarshaller() {
         @Override
@@ -249,10 +248,7 @@ public class PilotFragment implements GraphqlFragment {
         return new ResponseFieldMarshaller() {
           @Override
           public void marshal(ResponseWriter writer) {
-            final PlanetFragment $planetFragment = planetFragment;
-            if ($planetFragment != null) {
-              $planetFragment.marshaller().marshal(writer);
-            }
+            writer.writeFragment(planetFragment.marshaller());
           }
         };
       }
@@ -291,13 +287,22 @@ public class PilotFragment implements GraphqlFragment {
         return $hashCode;
       }
 
-      public static final class Mapper implements FragmentResponseFieldMapper<Fragments> {
+      public static final class Mapper implements ResponseFieldMapper<Fragments> {
+        static final ResponseField[] $responseFields = {
+          ResponseField.forFragment("__typename", "__typename", Collections.<ResponseField.Condition>emptyList())
+        };
+
         final PlanetFragment.Mapper planetFragmentFieldMapper = new PlanetFragment.Mapper();
 
         @Override
-        public @NotNull Fragments map(ResponseReader reader, @NotNull String conditionalType) {
-          PlanetFragment planetFragment = planetFragmentFieldMapper.map(reader);
-          return new Fragments(Utils.checkNotNull(planetFragment, "planetFragment == null"));
+        public @NotNull Fragments map(ResponseReader reader) {
+          final PlanetFragment planetFragment = reader.readFragment($responseFields[0], new ResponseReader.ObjectReader<PlanetFragment>() {
+            @Override
+            public PlanetFragment read(ResponseReader reader) {
+              return planetFragmentFieldMapper.map(reader);
+            }
+          });
+          return new Fragments(planetFragment);
         }
       }
     }
@@ -308,12 +313,7 @@ public class PilotFragment implements GraphqlFragment {
       @Override
       public Homeworld map(ResponseReader reader) {
         final String __typename = reader.readString($responseFields[0]);
-        final Fragments fragments = reader.readConditional($responseFields[1], new ResponseReader.ConditionalTypeReader<Fragments>() {
-          @Override
-          public Fragments read(String conditionalType, ResponseReader reader) {
-            return fragmentsFieldMapper.map(reader, conditionalType);
-          }
-        });
+        final Fragments fragments = fragmentsFieldMapper.map(reader);
         return new Homeworld(__typename, fragments);
       }
     }

@@ -1,5 +1,5 @@
 ---
-title: Mutation
+title: Mutations
 ---
 
 Queries are useful to fetch data from a server, but client-server communication may also require sending data to the server. This is where Mutations become handy.
@@ -109,10 +109,50 @@ In GraphQL, mutations can return any type, and that type can be queried just lik
 
 In most cases, the data available from a mutation result should be the server developer's best guess of the data a client would need to understand what happened on the server. For example, a mutation that creates a new comment on a blog post might return the comment itself. A mutation that reorders an array might need to return the whole array.
 
+## Uploading files
+
+Apollo Android supports file uploading over [graphql-multipart-request-spec](https://github.com/jaydenseric/graphql-multipart-request-spec).
+
+You need to define this mapping in your build.gradle file.
+
+```gradle
+apollo {
+  customTypeMapping = [
+    "Upload" : "com.apollographql.apollo.api.FileUpload"
+  ]
+}
+```
+
+**Note** You don't need to register custom type adapter for `FileUpload`.
+
+In this example, the GraphQL schema uses custom scalar type named `Upload` for file upload. 
+Change it to match your GraphQL schema.
+
+Create graphql mutation.
+
+```
+mutation SingleUpload($file: Upload!) {
+  singleUpload(file: $file) {
+    id
+    path
+    filename
+    mimetype
+  }
+}
+```
+
+Call your mutation with mimetype and a valid `File`.
+
+```java
+  mutationSingle = SingleUploadMutation.builder()
+        .file(new FileUpload("image/jpg", new File("/my/image.jpg")))
+        .build();
+```
+
 ## Next steps
 
 Learning how to build `Mutation` components to update your data is an important part of developing applications with Apollo Client. Now that you're well-versed in updating data, why not try executing client-side mutations with `apollo-link-state`? Here are some resources we think will help you level up your skills:
 
 - [#125, Fragmented Podcast](http://fragmentedpodcast.com/episodes/125/): Why's and How's about Apollo Android and the entire journey.
-- [Caching in Apollo](/essentials/support-for-cached-responses/): Dive deep into the Apollo cache and how it's normalized in our advanced guide on caching. Understanding the cache is helpful when writing your mutation's `update` function!
+- [Caching in Apollo](/essentials/caching/): Dive deep into the Apollo cache and how it's normalized in our advanced guide on caching. Understanding the cache is helpful when writing your mutation's `update` function!
 - [Mutation component video by Sara Vieira](https://youtu.be/2SYa0F50Mb4): If you need a refresher or learn best by watching videos, check out this tutorial on `Mutation` components by Sara!

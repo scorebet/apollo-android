@@ -6,24 +6,10 @@
 package com.example.inline_fragment_merge_fields.type;
 
 import com.apollographql.apollo.api.ScalarType;
-import java.lang.Class;
-import java.lang.Object;
 import java.lang.Override;
 import java.lang.String;
 
 public enum CustomType implements ScalarType {
-  URL {
-    @Override
-    public String typeName() {
-      return "URL";
-    }
-
-    @Override
-    public Class javaType() {
-      return Object.class;
-    }
-  },
-
   ID {
     @Override
     public String typeName() {
@@ -31,8 +17,20 @@ public enum CustomType implements ScalarType {
     }
 
     @Override
-    public Class javaType() {
-      return String.class;
+    public String className() {
+      return "java.lang.String";
+    }
+  },
+
+  URL {
+    @Override
+    public String typeName() {
+      return "URL";
+    }
+
+    @Override
+    public String className() {
+      return "java.lang.Object";
     }
   }
 }

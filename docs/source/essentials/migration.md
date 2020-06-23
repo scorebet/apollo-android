@@ -1,0 +1,302 @@
+---
+title: Migration guides
+---
+
+## Migrating to 2.x
+
+### Kotlin Multiplatform
+
+We are really excited to announce that with this release it is possible to build Kotlin Multiplatform apps with Apollo. The supported
+targets are Android / iOS / JVM.
+
+Please check-out `samples/multiplatform` for sample application.
+
+This is a backward compatible change for existing users. Please keep in mind that it will bring Kotlin standard library as a transitive
+dependency.
+
+Side effect changes of Kotlin migration:
+- Some primitive types like `Boolean`s may be unboxed where appropriate
+- Classes and functions are `final` unless they are intentionally marked as `open`
+- Kotlin-stdlib is added as a transitive dependency
+- Jvm target version is now 1.8
+- Gradle 6.x recommended. In 5.x, Gradle Metadata needs to be enabled by putting this into settings.gradle `enableFeaturePreview("GRADLE_METADATA")`
+                                
+### Okio and OkHttp migration
+
+During Kotlin Multiplatform integration, Okio and OkHttp are migrated to their latest major versions to make use of their Kotlin support.
+Okio is upgraded to 2.4.3 and OkHttp is upgraded to 4.4.0.
+
+**Note:** If you explicitly depend on these libraries, it would be recommended to do major version upgrade of this libraries first before
+upgrading Apollo. 
+
+Both of them are binary compatible for Java users. There are some source incompatible changes for Kotlin users. Please use `Code Cleanup`
+feature of IntelliJ / Android Studio to automatically handle the migration. More info can be found here: https://square.github.io/okhttp/upgrading_to_okhttp_4/
+
+> Update Okio and Okhttp ([#2054](https://github.com/apollographql/apollo-android/pull/2054))
+
+### New Normalized Cache Modules
+
+For in-memory `LruNormalizedCache` users, no change required since `apollo-runtime` brings it as transitive dependency. It is still
+recommended adding the following dependency explicitly: `implementation("com.apollographql.apollo:apollo-normalized-cache:x.y.z")`
+
+> Apollo normalized cache module ([#2142](https://github.com/apollographql/apollo-android/pull/2142))
+
+`SqlNormalizedCache` is moved to its own module. If you added `apollo-android-support` for disk cache, replace it with new dependency.
+
+```kotlin:title=build.gradle
+// Replace:
+implementation("com.apollographql.apollo:apollo-android-support:x.y.z")
+
+// With:
+implementation("com.apollographql.apollo:apollo-normalized-cache-sqlite:x.y.z") // highlight-line
+```
+
+`ApolloSqlHelper` is deprecated. Instantiate `SqlNormalizedCacheFactory` with same arguments instead.
+```java
+// Replace:
+ApolloSqlHelper apolloSqlHelper = ApolloSqlHelper.create(context, "db_name");
+NormalizedCacheFactory cacheFactory = new SqlNormalizedCacheFactory(apolloSqlHelper);
+
+// With:
+NormalizedCacheFactory cacheFactory = new SqlNormalizedCacheFactory(context, "db_name"); // highlight-line
+```
+
+> Replace legacy Android SQL with SqlDelight ([#2158](https://github.com/apollographql/apollo-android/pull/2158))
+                              
+### Deprecated Gradle Plugin
+
+The deprecated Gradle Plugin is now removed. Please refer to migration guide from previous releases before upgrading to 2.0
+https://www.apollographql.com/docs/android/essentials/migration/#gradle-plugin-changes
+
+## Migrating to 1.3.x
+
+Apollo-Android version 1.3.0 introduces some fixes and improvements that are incompatible with 1.2.x. Updating should be transparent for
+simple use cases and your project should compile fine. If you're using more advanced features such as custom schema/graphql files location,
+Kotlin Gradle scripts and/or transformed queries, or if you encounter a build error after updating, read on for details about the changes.
+
+### Gradle plugin changes
+
+The plugin has been rewritten in Kotlin to make it more maintainable and have better support for multiple GraphQL endpoints.  Below are the
+main changes. Read [plugin-configuration.md](https://www.apollographql.com/docs/android/gradle/plugin-configuration/) for a reference of the
+different options.
+
+#### New plugin ID
+
+The plugin ID has been changed from `com.apollographql.android` to `com.apollographql.apollo` to make it clear that the plugin works also
+for non-Android projects. `com.apollographql.android` will be removed in a future revision.
+
+```groovy
+// Replace:
+apply plugin: 'com.apollographql.android'
+
+// With:
+apply plugin: 'com.apollographql.apollo' // highlight-line
+```
+
+#### Using multiple services
+
+The plugin now requires that you specify multiple services explicitly. If you previously had the following layout:
+
+```
+src/main/graphql/com/github/schema.json
+src/main/graphql/com/github/GetRepositories.graphql
+src/main/graphql/com/starwars/schema.json
+src/main/graphql/com/starwars/GetHeroes.graphql
+```
+
+You will need to define 2 services:
+
+```kotlin:title=build.gradle
+apollo {
+  service("github") {
+    sourceFolder.set("com/github")
+    rootPackageName.set("com.github")
+  }
+  service("starwars") {
+    sourceFolder.set("com/starwars")
+    rootPackageName.set("com.starwars")
+  }
+}
+```
+
+#### Specifying schema and GraphQL files location
+
+The root `schemaFilePath`, `outputPackageName` and `sourceSets.graphql` are removed and will throw an error if you try to use them. Instead
+you can use [CompilationUnit] to control what files the compiler will use as inputs.
+
+```groovy:title=build.gradle
+// Replace:
+sourceSets {
+  main.graphql.srcDirs += "/path/to/your/graphql/queries/dir"
+}
+
+// With:
+// highlight-start
+apollo {
+  graphqlSourceDirectorySet.srcDirs += "/path/to/your/graphql/queries/dir"
+}  
+// highlight-end
+```
+
+```groovy:title=build.gradle
+// Replace
+apollo {
+  sourceSet {
+    schemaFilePath = "/path/to/your/schema.json"
+    exclude = "**/*.gql"
+  }
+  outputPackageName = "com.example"
+}
+
+// With:
+apollo {
+  schemaFile.set(file("/path/to/your/schema.json"))
+  graphqlSourceDirectorySet.exclude("**/*.gql")
+  rootPackageName.set("com.example")
+}
+```
+
+#### Kotlin DSL
+
+The plugin uses Gradle [Properties](https://docs.gradle.org/current/javadoc/org/gradle/api/provider/Property.html) to support
+[lazy configuration](https://docs.gradle.org/current/userguide/lazy_configuration.html) and wiring tasks together.
+
+If you're using Groovy `build.gradle` build scripts it should work transparently but Kotlin `build.gradle.kts` build scripts will require
+you to use the [Property.set](https://docs.gradle.org/current/javadoc/org/gradle/api/provider/Property.html#set-T-) API:
+
+```kotlin:title=build.gradle
+apollo {
+  // Replace:
+  setGenerateKotlinModels(true)
+
+  // With:
+  generateKotlinModels.set(true) // highlight-line
+}
+```
+
+Also, the classes of the plugin have been split into an [api](https://github.com/apollographql/apollo-android/tree/4692659508242d64882b8bff11efa7dcd555dbcc/apollo-gradle-plugin-incubating/src/main/kotlin/com/apollographql/apollo/gradle/api)
+part and an [internal](https://github.com/apollographql/apollo-android/tree/4692659508242d64882b8bff11efa7dcd555dbcc/apollo-gradle-plugin-incubating/src/main/kotlin/com/apollographql/apollo/gradle/internal)
+one. If you were relying on fully qualified class names from your `build.gradle.kts` files, you will have to tweak them:
+
+```kotlin
+// Replace:
+import com.apollographql.apollo.gradle.ApolloExtension
+
+// With:
+import com.apollographql.apollo.gradle.api.ApolloExtension // highlight-line
+```
+
+### Breaking changes in generated Kotlin models with inline fragments:
+
+Field `inlineFragment` is no longer generated with a new Apollo **1.3.0** release for Kotlin models. 
+
+For example:
+
+[previous version of model with inline fragments](https://github.com/apollographql/apollo-android/blob/hotfix/1.2.3/apollo-compiler/src/test/graphql/com/example/simple_inline_fragment/TestQuery.kt#L129)
+
+```kotlin
+data class Hero(
+    val __typename: String,
+    /**
+     * The name of the character
+     */
+    val name: String,
+    val inlineFragment: HeroCharacter?
+  ) {
+    val asHuman: AsHuman? = inlineFragment as? AsHuman
+
+    val asDroid: AsDroid? = inlineFragment as? AsDroid
+...
+```
+
+[new version of generated model with inline fragments](https://github.com/apollographql/apollo-android/blob/v1.3.0/apollo-compiler/src/test/graphql/com/example/simple_inline_fragment/TestQuery.kt#L125)
+
+```kotlin
+  data class Hero(
+    val __typename: String,
+    /**
+     * The name of the character
+     */
+    val name: String,
+    val asHuman: AsHuman?,
+    val asDroid: AsDroid?
+  )
+```
+
+***Motivation***: there is an issue with previous version of generated model, there are cases when specified multiple inline fragments
+should be resolved for the same GraphQL type. For example imagine that GraphQL schema defines this hierarchy of types
+`Character <- Hero <- Human`. Having this GraphQL query:
+
+```graphql
+query {
+  character {
+    name
+    ... on Hero { ... }
+    ... on Human { ... }
+   }
+}
+```
+
+both inline fragments `on Hero` and `on Human` should be resolved for character type `Human` as `Hero` is super type of `Human`. 
+
+Previous version of generated model for `Character` didn't resolve both inline fragments but rather first declared `... on Hero`. New
+version resolves both fragments `on Hero` and `on Human`.
+
+***Migration***:
+
+If you have this code to get access to the resolved inline fragment:
+
+```kotlin
+when (hero.inlineFragment) {
+    is Hero.AsHuman -> // ...
+    is Hero.AsDroid -> // ...
+}
+```
+
+you should change it to check all declared inline fragments for nullability, as it's possible now to have multiple resolved fragments:
+
+```kotlin
+if (hero.asHuman != null) {
+  // ...
+}
+
+if (hero.asDroid != null) {
+  // ...
+}
+```
+
+### Singularization
+
+Singularization rules have been improved (see [1888](https://github.com/apollographql/apollo-android/pull/1888)). That means the name of
+some classes that were previously wrongly or badly singularized might have changed. Check for a generated class with a similar name if that
+happens.
+
+### Nested class names
+
+Nested classes are now allowed to have the same name as their parent (see [1893](https://github.com/apollographql/apollo-android/pull/1893)).
+If you were previously using such a class, the numbered suffix will be removed.
+
+### Transformed queries removal
+
+Version 1.3.0 can now optionally generate a `OperationOutput.json` file. This file will contain the generated queries source, operation name
+and operation ID. You can use them to whitelist the operation on your server or any other use case. See
+[1841](https://github.com/apollographql/apollo-android/pull/1841) for details.
+
+Since OperationOutput.json is a superset of the transformed queries, transformed queries have been removed. If you were using transformed
+queries, you will now have to use OperationOutput.json.
+
+### Espresso Idling Resources
+
+Idling Resources integration is moved to AndroidX! This is a potential breaking change for users who has not migrated to AndroidX yet. If
+you haven't you can still use the 1.2.x version in your test code.
+
+The artifact is also renamed to make its intention more obvious. Documentation for idling resource can be found
+[here](https://www.apollographql.com/docs/android/advanced/android/#apolloidlingresource)
+
+```groovy:title=build.gradle
+  // Replace:
+  androidTestImplementation("com.apollographql.apollo:apollo-espresso-support:x.y.z")
+
+  // With:
+  androidTestImplementation("com.apollographql.apollo:apollo-idling-resource:x.y.z") // highlight-line
+```

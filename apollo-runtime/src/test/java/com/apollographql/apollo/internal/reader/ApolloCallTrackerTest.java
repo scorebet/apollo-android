@@ -4,10 +4,19 @@ import com.apollographql.apollo.ApolloClient;
 import com.apollographql.apollo.IdleResourceCallback;
 import com.apollographql.apollo.api.OperationName;
 import com.apollographql.apollo.api.Query;
-import com.apollographql.apollo.api.ResponseFieldMapper;
-import com.apollographql.apollo.api.ResponseReader;
+import com.apollographql.apollo.api.Response;
+import com.apollographql.apollo.api.ScalarTypeAdapters;
+import com.apollographql.apollo.api.internal.OperationRequestBodyComposer;
+import com.apollographql.apollo.api.internal.ResponseFieldMapper;
+import com.apollographql.apollo.api.internal.ResponseReader;
 import com.apollographql.apollo.rx2.Rx2Apollo;
-
+import okhttp3.Interceptor;
+import okhttp3.OkHttpClient;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import okio.BufferedSource;
+import okio.ByteString;
+import org.jetbrains.annotations.NotNull;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -19,13 +28,6 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import org.jetbrains.annotations.NotNull;
-
-import okhttp3.Interceptor;
-import okhttp3.OkHttpClient;
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
 
 import static com.google.common.truth.Truth.assertThat;
 
@@ -67,6 +69,38 @@ public class ApolloCallTrackerTest {
     @NotNull @Override public String operationId() {
       return "";
     }
+
+    @NotNull @Override public Response parse(@NotNull BufferedSource source) {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public Response parse(@NotNull BufferedSource source, @NotNull ScalarTypeAdapters scalarTypeAdapters) {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public Response parse(@NotNull ByteString byteString) {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public Response parse(@NotNull ByteString byteString, @NotNull ScalarTypeAdapters scalarTypeAdapters) {
+      throw new UnsupportedOperationException();
+    }
+
+    @NotNull @Override public ByteString composeRequestBody(
+        boolean autoPersistQueries,
+        boolean withQueryDocument,
+        @NotNull ScalarTypeAdapters scalarTypeAdapters
+    ) {
+        return OperationRequestBodyComposer.compose(this, autoPersistQueries, withQueryDocument, scalarTypeAdapters);
+      }
+
+      @NotNull @Override public ByteString composeRequestBody(@NotNull ScalarTypeAdapters scalarTypeAdapters) {
+        return OperationRequestBodyComposer.compose(this, false, true, scalarTypeAdapters);
+      }
+
+      @NotNull @Override public ByteString composeRequestBody() {
+        return OperationRequestBodyComposer.compose(this, false, true, ScalarTypeAdapters.DEFAULT);
+      }
   };
 
   @Rule public final MockWebServer server = new MockWebServer();
@@ -94,7 +128,7 @@ public class ApolloCallTrackerTest {
   }
 
   @Test
-  public void testRunningCallsCount_whenSyncPrefetchCallIsMade() throws InterruptedException {
+  public void testRunningCallsCountWhenSyncPrefetchCallIsMade() throws InterruptedException {
     assertThat(apolloClient.activeCallsCount()).isEqualTo(0);
     Rx2Apollo
         .from(apolloClient.prefetch(EMPTY_QUERY))
@@ -105,7 +139,7 @@ public class ApolloCallTrackerTest {
   }
 
   @Test
-  public void testRunningCallsCount_whenAsyncPrefetchCallIsMade() throws InterruptedException {
+  public void testRunningCallsCountWhenAsyncPrefetchCallIsMade() throws InterruptedException {
     assertThat(apolloClient.activeCallsCount()).isEqualTo(0);
     server.enqueue(createMockResponse());
     Rx2Apollo
@@ -117,7 +151,7 @@ public class ApolloCallTrackerTest {
   }
 
   @Test
-  public void testRunningCallsCount_whenAsyncApolloCallIsMade() throws InterruptedException {
+  public void testRunningCallsCountWhenAsyncApolloCallIsMade() throws InterruptedException {
     assertThat(apolloClient.activeCallsCount()).isEqualTo(0);
     server.enqueue(createMockResponse());
     Rx2Apollo
@@ -129,7 +163,7 @@ public class ApolloCallTrackerTest {
   }
 
   @Test
-  public void testIdleCallBackIsInvoked_whenApolloClientBecomesIdle() throws InterruptedException, TimeoutException {
+  public void testIdleCallBackIsInvokedWhenApolloClientBecomesIdle() throws InterruptedException, TimeoutException {
     server.enqueue(createMockResponse());
     final AtomicBoolean idle = new AtomicBoolean();
     IdleResourceCallback idleResourceCallback = new IdleResourceCallback() {

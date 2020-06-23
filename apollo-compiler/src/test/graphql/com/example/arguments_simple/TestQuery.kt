@@ -6,15 +6,21 @@
 package com.example.arguments_simple
 
 import com.apollographql.apollo.api.Input
-import com.apollographql.apollo.api.InputFieldMarshaller
 import com.apollographql.apollo.api.Operation
 import com.apollographql.apollo.api.OperationName
 import com.apollographql.apollo.api.Query
+import com.apollographql.apollo.api.Response
 import com.apollographql.apollo.api.ResponseField
-import com.apollographql.apollo.api.ResponseFieldMapper
-import com.apollographql.apollo.api.ResponseFieldMarshaller
-import com.apollographql.apollo.api.ResponseReader
-import com.apollographql.apollo.internal.QueryDocumentMinifier
+import com.apollographql.apollo.api.ScalarTypeAdapters
+import com.apollographql.apollo.api.ScalarTypeAdapters.Companion.DEFAULT
+import com.apollographql.apollo.api.internal.InputFieldMarshaller
+import com.apollographql.apollo.api.internal.OperationRequestBodyComposer
+import com.apollographql.apollo.api.internal.QueryDocumentMinifier
+import com.apollographql.apollo.api.internal.ResponseFieldMapper
+import com.apollographql.apollo.api.internal.ResponseFieldMarshaller
+import com.apollographql.apollo.api.internal.ResponseReader
+import com.apollographql.apollo.api.internal.SimpleOperationResponseParser
+import com.apollographql.apollo.api.internal.Throws
 import com.example.arguments_simple.fragment.HeroDetails
 import com.example.arguments_simple.type.Episode
 import kotlin.Any
@@ -26,11 +32,15 @@ import kotlin.Suppress
 import kotlin.collections.List
 import kotlin.collections.Map
 import kotlin.jvm.Transient
+import okio.Buffer
+import okio.BufferedSource
+import okio.ByteString
+import okio.IOException
 
 @Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
     "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
 data class TestQuery(
-  val episode: Input<Episode>,
+  val episode: Input<Episode> = Input.absent(),
   val includeName: Boolean,
   val friendsCount: Int,
   val listOfListOfStringArgs: List<List<String?>>
@@ -38,18 +48,22 @@ data class TestQuery(
   @Transient
   private val variables: Operation.Variables = object : Operation.Variables() {
     override fun valueMap(): Map<String, Any?> = mutableMapOf<String, Any?>().apply {
-      if (episode.defined) this["episode"] = episode.value
-      this["IncludeName"] = includeName
-      this["friendsCount"] = friendsCount
-      this["listOfListOfStringArgs"] = listOfListOfStringArgs
+      if (this@TestQuery.episode.defined) {
+        this["episode"] = this@TestQuery.episode.value
+      }
+      this["IncludeName"] = this@TestQuery.includeName
+      this["friendsCount"] = this@TestQuery.friendsCount
+      this["listOfListOfStringArgs"] = this@TestQuery.listOfListOfStringArgs
     }
 
-    override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller { writer ->
-      if (episode.defined) writer.writeString("episode", episode.value?.rawValue)
-      writer.writeBoolean("IncludeName", includeName)
-      writer.writeInt("friendsCount", friendsCount)
+    override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller.invoke { writer ->
+      if (this@TestQuery.episode.defined) {
+        writer.writeString("episode", this@TestQuery.episode.value?.rawValue)
+      }
+      writer.writeBoolean("IncludeName", this@TestQuery.includeName)
+      writer.writeInt("friendsCount", this@TestQuery.friendsCount)
       writer.writeList("listOfListOfStringArgs") { listItemWriter ->
-        listOfListOfStringArgs.forEach { value ->
+        this@TestQuery.listOfListOfStringArgs.forEach { value ->
           listItemWriter.writeList { listItemWriter ->
             value.forEach { value ->
               listItemWriter.writeString(value)
@@ -65,69 +79,131 @@ data class TestQuery(
   override fun wrapData(data: Data?): Data? = data
   override fun variables(): Operation.Variables = variables
   override fun name(): OperationName = OPERATION_NAME
-  override fun responseFieldMapper(): ResponseFieldMapper<Data> = ResponseFieldMapper {
+  override fun responseFieldMapper(): ResponseFieldMapper<Data> = ResponseFieldMapper.invoke {
     Data(it)
   }
 
+  @Throws(IOException::class)
+  override fun parse(source: BufferedSource, scalarTypeAdapters: ScalarTypeAdapters): Response<Data>
+      = SimpleOperationResponseParser.parse(source, this, scalarTypeAdapters)
+
+  @Throws(IOException::class)
+  override fun parse(byteString: ByteString, scalarTypeAdapters: ScalarTypeAdapters): Response<Data>
+      = parse(Buffer().write(byteString), scalarTypeAdapters)
+
+  @Throws(IOException::class)
+  override fun parse(source: BufferedSource): Response<Data> = parse(source, DEFAULT)
+
+  @Throws(IOException::class)
+  override fun parse(byteString: ByteString): Response<Data> = parse(byteString, DEFAULT)
+
+  override fun composeRequestBody(scalarTypeAdapters: ScalarTypeAdapters): ByteString =
+      OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = false,
+    withQueryDocument = true,
+    scalarTypeAdapters = scalarTypeAdapters
+  )
+
+  override fun composeRequestBody(): ByteString = OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = false,
+    withQueryDocument = true,
+    scalarTypeAdapters = DEFAULT
+  )
+
+  override fun composeRequestBody(
+    autoPersistQueries: Boolean,
+    withQueryDocument: Boolean,
+    scalarTypeAdapters: ScalarTypeAdapters
+  ): ByteString = OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = autoPersistQueries,
+    withQueryDocument = withQueryDocument,
+    scalarTypeAdapters = scalarTypeAdapters
+  )
+
+  /**
+   * A character from the Star Wars universe
+   */
   data class Hero(
-    val __typename: String,
+    val __typename: String = "Character",
     /**
      * The name of the character
      */
     val name: String?,
     val fragments: Fragments
   ) {
-    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeString(RESPONSE_FIELDS[0], __typename)
-      it.writeString(RESPONSE_FIELDS[1], name)
-      fragments.marshaller().marshal(it)
+    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeString(RESPONSE_FIELDS[0], this@Hero.__typename)
+      writer.writeString(RESPONSE_FIELDS[1], this@Hero.name)
+      this@Hero.fragments.marshaller().marshal(writer)
     }
 
     companion object {
       private val RESPONSE_FIELDS: Array<ResponseField> = arrayOf(
           ResponseField.forString("__typename", "__typename", null, false, null),
-          ResponseField.forString("name", "name", null, true,
-              listOf(ResponseField.Condition.booleanCondition("IncludeName", false))),
+          ResponseField.forString("name", "name", null, true, listOf(
+            ResponseField.Condition.booleanCondition("IncludeName", false)
+          )),
           ResponseField.forString("__typename", "__typename", null, false, null)
           )
 
-      operator fun invoke(reader: ResponseReader): Hero {
-        val __typename = reader.readString(RESPONSE_FIELDS[0])
-        val name = reader.readString(RESPONSE_FIELDS[1])
-        val fragments = reader.readConditional(RESPONSE_FIELDS[2]) { conditionalType, reader ->
-          val heroDetails = HeroDetails(reader)
-          Fragments(
-            heroDetails = heroDetails
-          )
-        }
-
-        return Hero(
+      operator fun invoke(reader: ResponseReader): Hero = reader.run {
+        val __typename = readString(RESPONSE_FIELDS[0])!!
+        val name = readString(RESPONSE_FIELDS[1])
+        val fragments = Fragments(reader)
+        Hero(
           __typename = __typename,
           name = name,
           fragments = fragments
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<Hero> = ResponseFieldMapper { invoke(it) }
     }
 
     data class Fragments(
       val heroDetails: HeroDetails
     ) {
-      fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-        heroDetails.marshaller().marshal(it)
+      fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+        writer.writeFragment(this@Fragments.heroDetails.marshaller())
+      }
+
+      companion object {
+        private val RESPONSE_FIELDS: Array<ResponseField> = arrayOf(
+            ResponseField.forFragment("__typename", "__typename", null)
+            )
+
+        operator fun invoke(reader: ResponseReader): Fragments = reader.run {
+          val heroDetails = readFragment<HeroDetails>(RESPONSE_FIELDS[0]) { reader ->
+            HeroDetails(reader)
+          }!!
+          Fragments(
+            heroDetails = heroDetails
+          )
+        }
+
+        @Suppress("FunctionName")
+        fun Mapper(): ResponseFieldMapper<Fragments> = ResponseFieldMapper { invoke(it) }
       }
     }
   }
 
+  /**
+   * A humanoid creature from the Star Wars universe
+   */
   data class HeroWithReview(
-    val __typename: String,
+    val __typename: String = "Human",
     /**
      * What this human calls themselves
      */
     val name: String
   ) {
-    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeString(RESPONSE_FIELDS[0], __typename)
-      it.writeString(RESPONSE_FIELDS[1], name)
+    fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeString(RESPONSE_FIELDS[0], this@HeroWithReview.__typename)
+      writer.writeString(RESPONSE_FIELDS[1], this@HeroWithReview.name)
     }
 
     companion object {
@@ -136,24 +212,30 @@ data class TestQuery(
           ResponseField.forString("name", "name", null, false, null)
           )
 
-      operator fun invoke(reader: ResponseReader): HeroWithReview {
-        val __typename = reader.readString(RESPONSE_FIELDS[0])
-        val name = reader.readString(RESPONSE_FIELDS[1])
-        return HeroWithReview(
+      operator fun invoke(reader: ResponseReader): HeroWithReview = reader.run {
+        val __typename = readString(RESPONSE_FIELDS[0])!!
+        val name = readString(RESPONSE_FIELDS[1])!!
+        HeroWithReview(
           __typename = __typename,
           name = name
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<HeroWithReview> = ResponseFieldMapper { invoke(it) }
     }
   }
 
+  /**
+   * Data from the response after executing this GraphQL operation
+   */
   data class Data(
     val hero: Hero?,
     val heroWithReview: HeroWithReview?
   ) : Operation.Data {
-    override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller {
-      it.writeObject(RESPONSE_FIELDS[0], hero?.marshaller())
-      it.writeObject(RESPONSE_FIELDS[1], heroWithReview?.marshaller())
+    override fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
+      writer.writeObject(RESPONSE_FIELDS[0], this@Data.hero?.marshaller())
+      writer.writeObject(RESPONSE_FIELDS[1], this@Data.heroWithReview?.marshaller())
     }
 
     companion object {
@@ -172,20 +254,21 @@ data class TestQuery(
             "review" to emptyMap<String, Any>()), true, null)
           )
 
-      operator fun invoke(reader: ResponseReader): Data {
-        val hero = reader.readObject<Hero>(RESPONSE_FIELDS[0]) { reader ->
+      operator fun invoke(reader: ResponseReader): Data = reader.run {
+        val hero = readObject<Hero>(RESPONSE_FIELDS[0]) { reader ->
           Hero(reader)
         }
-
-        val heroWithReview = reader.readObject<HeroWithReview>(RESPONSE_FIELDS[1]) { reader ->
+        val heroWithReview = readObject<HeroWithReview>(RESPONSE_FIELDS[1]) { reader ->
           HeroWithReview(reader)
         }
-
-        return Data(
+        Data(
           hero = hero,
           heroWithReview = heroWithReview
         )
       }
+
+      @Suppress("FunctionName")
+      fun Mapper(): ResponseFieldMapper<Data> = ResponseFieldMapper { invoke(it) }
     }
   }
 
@@ -223,6 +306,8 @@ data class TestQuery(
           """.trimMargin()
         )
 
-    val OPERATION_NAME: OperationName = OperationName { "TestQuery" }
+    val OPERATION_NAME: OperationName = object : OperationName {
+      override fun name(): String = "TestQuery"
+    }
   }
 }

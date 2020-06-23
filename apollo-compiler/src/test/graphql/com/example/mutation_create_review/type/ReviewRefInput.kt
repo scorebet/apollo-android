@@ -6,8 +6,8 @@
 package com.example.mutation_create_review.type
 
 import com.apollographql.apollo.api.Input
-import com.apollographql.apollo.api.InputFieldMarshaller
 import com.apollographql.apollo.api.InputType
+import com.apollographql.apollo.api.internal.InputFieldMarshaller
 import kotlin.Suppress
 
 /**
@@ -15,10 +15,12 @@ import kotlin.Suppress
  */
 @Suppress("NAME_SHADOWING", "UNUSED_ANONYMOUS_PARAMETER", "LocalVariableName",
     "RemoveExplicitTypeArguments", "NestedLambdaShadowedImplicitParameter")
-data class ReviewRefInput(
+internal data class ReviewRefInput(
   val reviewInput: Input<ReviewInput> = Input.absent()
 ) : InputType {
-  override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller { writer ->
-    if (reviewInput.defined) writer.writeObject("reviewInput", reviewInput.value?.marshaller())
+  override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller.invoke { writer ->
+    if (this@ReviewRefInput.reviewInput.defined) {
+      writer.writeObject("reviewInput", this@ReviewRefInput.reviewInput.value?.marshaller())
+    }
   }
 }

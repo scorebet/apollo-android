@@ -1,7 +1,7 @@
 package com.apollographql.apollo.compiler
 
-import com.apollographql.apollo.api.InputFieldMarshaller
-import com.apollographql.apollo.api.InputFieldWriter
+import com.apollographql.apollo.api.internal.InputFieldMarshaller
+import com.apollographql.apollo.api.internal.InputFieldWriter
 import com.apollographql.apollo.compiler.ir.CodeGenerationContext
 import com.apollographql.apollo.compiler.ir.TypeDeclarationField
 import com.squareup.javapoet.*
@@ -55,8 +55,8 @@ class InputTypeSpecBuilder(
           }
           .associate { it.name.decapitalize().escapeJavaReservedWord() to it.defaultValue }
       val javaDocs = fields
-          .filter { !it.description.isNullOrBlank() }
-          .associate { it.name.decapitalize().escapeJavaReservedWord() to it.description!! }
+          .filter { it.description.isNotBlank() }
+          .associate { it.name.decapitalize().escapeJavaReservedWord() to it.description }
       return addMethod(BuilderTypeSpecBuilder.builderFactoryMethod())
           .addType(
               BuilderTypeSpecBuilder(

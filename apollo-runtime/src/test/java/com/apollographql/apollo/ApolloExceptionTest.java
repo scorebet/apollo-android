@@ -2,14 +2,24 @@ package com.apollographql.apollo;
 
 import com.apollographql.apollo.api.OperationName;
 import com.apollographql.apollo.api.Query;
-import com.apollographql.apollo.api.ResponseFieldMapper;
-import com.apollographql.apollo.api.ResponseReader;
+import com.apollographql.apollo.api.Response;
+import com.apollographql.apollo.api.ScalarTypeAdapters;
+import com.apollographql.apollo.api.internal.OperationRequestBodyComposer;
+import com.apollographql.apollo.api.internal.ResponseFieldMapper;
+import com.apollographql.apollo.api.internal.ResponseReader;
+import com.apollographql.apollo.api.internal.json.JsonEncodingException;
 import com.apollographql.apollo.exception.ApolloHttpException;
 import com.apollographql.apollo.exception.ApolloNetworkException;
 import com.apollographql.apollo.exception.ApolloParseException;
-import com.apollographql.apollo.json.JsonEncodingException;
 import com.apollographql.apollo.rx2.Rx2Apollo;
-
+import io.reactivex.functions.Consumer;
+import io.reactivex.functions.Predicate;
+import okhttp3.OkHttpClient;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import okio.BufferedSource;
+import okio.ByteString;
+import org.jetbrains.annotations.NotNull;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -18,18 +28,10 @@ import java.net.SocketTimeoutException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.jetbrains.annotations.NotNull;
-
-import io.reactivex.functions.Consumer;
-import io.reactivex.functions.Predicate;
-import okhttp3.OkHttpClient;
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
-
 import static com.google.common.truth.Truth.assertThat;
 
 @SuppressWarnings("unchecked") public class ApolloExceptionTest {
-  private static long TIMEOUT_SECONDS = 2;
+  private static long timeoutSeconds = 2;
 
   @Rule public final MockWebServer server = new MockWebServer();
   private ApolloClient apolloClient;
@@ -39,8 +41,8 @@ import static com.google.common.truth.Truth.assertThat;
     apolloClient = ApolloClient.builder()
         .serverUrl(server.url("/"))
         .okHttpClient(new OkHttpClient.Builder()
-            .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .connectTimeout(timeoutSeconds, TimeUnit.SECONDS)
+            .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .build())
         .build();
 
@@ -78,6 +80,38 @@ import static com.google.common.truth.Truth.assertThat;
       @Override public Object wrapData(Data data) {
         return data;
       }
+
+      @NotNull @Override public Response parse(@NotNull BufferedSource source) {
+        throw new UnsupportedOperationException();
+      }
+
+      @NotNull @Override public Response parse(@NotNull BufferedSource source, @NotNull ScalarTypeAdapters scalarTypeAdapters) {
+        throw new UnsupportedOperationException();
+      }
+
+      @NotNull @Override public Response parse(@NotNull ByteString byteString) {
+        throw new UnsupportedOperationException();
+      }
+
+      @NotNull @Override public Response parse(@NotNull ByteString byteString, @NotNull ScalarTypeAdapters scalarTypeAdapters) {
+        throw new UnsupportedOperationException();
+      }
+
+      @NotNull @Override public ByteString composeRequestBody(
+          boolean autoPersistQueries,
+          boolean withQueryDocument,
+          @NotNull ScalarTypeAdapters scalarTypeAdapters
+      ) {
+        return OperationRequestBodyComposer.compose(this, autoPersistQueries, withQueryDocument, scalarTypeAdapters);
+      }
+
+      @NotNull @Override public ByteString composeRequestBody(@NotNull ScalarTypeAdapters scalarTypeAdapters) {
+        return OperationRequestBodyComposer.compose(this, false, true, scalarTypeAdapters);
+      }
+
+      @NotNull @Override public ByteString composeRequestBody() {
+        return OperationRequestBodyComposer.compose(this, false, true, ScalarTypeAdapters.DEFAULT);
+      }
     };
   }
 
@@ -95,7 +129,7 @@ import static com.google.common.truth.Truth.assertThat;
           }
         })
         .test()
-        .awaitDone(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .awaitDone(timeoutSeconds, TimeUnit.SECONDS)
         .assertError(ApolloHttpException.class);
 
     ApolloHttpException e = (ApolloHttpException) errorRef.get();
@@ -110,7 +144,7 @@ import static com.google.common.truth.Truth.assertThat;
     Rx2Apollo
         .from(apolloClient.prefetch(emptyQuery))
         .test()
-        .awaitDone(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .awaitDone(timeoutSeconds, TimeUnit.SECONDS)
         .assertNoValues()
         .assertError(ApolloHttpException.class);
   }
@@ -119,7 +153,7 @@ import static com.google.common.truth.Truth.assertThat;
     Rx2Apollo
         .from(apolloClient.query(emptyQuery))
         .test()
-        .awaitDone(TIMEOUT_SECONDS * 2, TimeUnit.SECONDS)
+        .awaitDone(timeoutSeconds * 2, TimeUnit.SECONDS)
         .assertNoValues()
         .assertError(new Predicate<Throwable>() {
           @Override public boolean test(Throwable throwable) throws Exception {
@@ -135,7 +169,7 @@ import static com.google.common.truth.Truth.assertThat;
     Rx2Apollo
         .from(apolloClient.prefetch(emptyQuery))
         .test()
-        .awaitDone(TIMEOUT_SECONDS * 2, TimeUnit.SECONDS)
+        .awaitDone(timeoutSeconds * 2, TimeUnit.SECONDS)
         .assertNoValues()
         .assertError(new Predicate<Throwable>() {
           @Override public boolean test(Throwable throwable) throws Exception {
@@ -152,7 +186,7 @@ import static com.google.common.truth.Truth.assertThat;
     Rx2Apollo
         .from(apolloClient.query(emptyQuery))
         .test()
-        .awaitDone(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .awaitDone(timeoutSeconds, TimeUnit.SECONDS)
         .assertNoValues()
         .assertError(new Predicate<Throwable>() {
           @Override public boolean test(Throwable throwable) throws Exception {

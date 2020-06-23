@@ -3,26 +3,23 @@ package com.apollographql.apollo.response;
 import com.apollographql.apollo.api.Error;
 import com.apollographql.apollo.api.Operation;
 import com.apollographql.apollo.api.Response;
-import com.apollographql.apollo.api.ResponseFieldMapper;
-import com.apollographql.apollo.internal.cache.normalized.ResponseNormalizer;
+import com.apollographql.apollo.api.ScalarTypeAdapters;
+import com.apollographql.apollo.api.internal.ResponseFieldMapper;
+import com.apollographql.apollo.api.internal.json.BufferedSourceJsonReader;
+import com.apollographql.apollo.api.internal.json.ResponseJsonStreamReader;
+import com.apollographql.apollo.cache.normalized.internal.ResponseNormalizer;
 import com.apollographql.apollo.internal.field.MapFieldValueResolver;
-import com.apollographql.apollo.internal.json.BufferedSourceJsonReader;
-import com.apollographql.apollo.internal.json.ResponseJsonStreamReader;
 import com.apollographql.apollo.internal.response.RealResponseReader;
+import okio.BufferedSource;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.jetbrains.annotations.NotNull;
-
-import okio.BufferedSource;
-
 import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
-import static com.apollographql.apollo.internal.json.ApolloJsonReader.responseJsonStreamReader;
 
 @SuppressWarnings("WeakerAccess")
 public final class OperationResponseParser<D extends Operation.Data, W> {
@@ -48,6 +45,8 @@ public final class OperationResponseParser<D extends Operation.Data, W> {
   public Response<W> parse(@NotNull Map<String, Object> payload) {
     checkNotNull(payload, "payload == null");
 
+    responseNormalizer.willResolveRootQuery(operation);
+
     D data = null;
     Map<String, Object> buffer = (Map<String, Object>) payload.get("data");
     if (buffer != null) {
@@ -62,7 +61,7 @@ public final class OperationResponseParser<D extends Operation.Data, W> {
       if (errorPayloads != null) {
         errors = new ArrayList<>();
         for (Map<String, Object> errorPayload : errorPayloads) {
-          errors.add(readError(errorPayload));
+          errors.add(parseError(errorPayload));
         }
       }
     }
@@ -71,6 +70,7 @@ public final class OperationResponseParser<D extends Operation.Data, W> {
         .data(operation.wrapData(data))
         .errors(errors)
         .dependentKeys(responseNormalizer.dependentKeys())
+        .extensions((Map<String, Object>) payload.get("extensions"))
         .build();
   }
 
@@ -83,7 +83,8 @@ public final class OperationResponseParser<D extends Operation.Data, W> {
 
       D data = null;
       List<Error> errors = null;
-      ResponseJsonStreamReader responseStreamReader = responseJsonStreamReader(jsonReader);
+      Map<String, Object> extensions = null;
+      ResponseJsonStreamReader responseStreamReader = new ResponseJsonStreamReader(jsonReader);
       while (responseStreamReader.hasNext()) {
         String name = responseStreamReader.nextName();
         if ("data".equals(name)) {
@@ -98,6 +99,12 @@ public final class OperationResponseParser<D extends Operation.Data, W> {
           });
         } else if ("errors".equals(name)) {
           errors = readResponseErrors(responseStreamReader);
+        } else if ("extensions".equals(name)) {
+          extensions = responseStreamReader.nextObject(true, new ResponseJsonStreamReader.ObjectReader<Map<String, Object>>() {
+            @Override public Map<String, Object> read(ResponseJsonStreamReader reader) throws IOException {
+              return reader.toMap();
+            }
+          });
         } else {
           responseStreamReader.skipNext();
         }
@@ -107,6 +114,7 @@ public final class OperationResponseParser<D extends Operation.Data, W> {
           .data(operation.wrapData(data))
           .errors(errors)
           .dependentKeys(responseNormalizer.dependentKeys())
+          .extensions(extensions)
           .build();
     } finally {
       if (jsonReader != null) {
@@ -120,7 +128,7 @@ public final class OperationResponseParser<D extends Operation.Data, W> {
       @Override public Error read(ResponseJsonStreamReader reader) throws IOException {
         return reader.nextObject(true, new ResponseJsonStreamReader.ObjectReader<Error>() {
           @Override public Error read(ResponseJsonStreamReader reader) throws IOException {
-            return readError(reader.toMap());
+            return parseError(reader.toMap());
           }
         });
       }
@@ -128,19 +136,19 @@ public final class OperationResponseParser<D extends Operation.Data, W> {
   }
 
   @SuppressWarnings("unchecked")
-  private Error readError(Map<String, Object> payload) {
-    String message = null;
+  public static Error parseError(Map<String, Object> payload) {
+    String message = "";
     final List<Error.Location> locations = new ArrayList<>();
     final Map<String, Object> customAttributes = new HashMap<>();
     for (Map.Entry<String, Object> entry : payload.entrySet()) {
       if ("message".equals(entry.getKey())) {
         Object value = entry.getValue();
-        message = value != null ? value.toString() : null;
+        message = value != null ? value.toString() : "";
       } else if ("locations".equals(entry.getKey())) {
         List<Map<String, Object>> locationItems = (List<Map<String, Object>>) entry.getValue();
         if (locationItems != null) {
           for (Map<String, Object> item : locationItems) {
-            locations.add(readErrorLocation(item));
+            locations.add(parseErrorLocation(item));
           }
         }
       } else {
@@ -153,15 +161,15 @@ public final class OperationResponseParser<D extends Operation.Data, W> {
   }
 
   @SuppressWarnings("ConstantConditions")
-  private Error.Location readErrorLocation(Map<String, Object> data) {
+  private static Error.Location parseErrorLocation(Map<String, Object> data) {
     long line = -1;
     long column = -1;
     if (data != null) {
       for (Map.Entry<String, Object> entry : data.entrySet()) {
         if ("line".equals(entry.getKey())) {
-          line = ((BigDecimal) entry.getValue()).longValue();
+          line = ((Number) entry.getValue()).longValue();
         } else if ("column".equals(entry.getKey())) {
-          column = ((BigDecimal) entry.getValue()).longValue();
+          column = ((Number) entry.getValue()).longValue();
         }
       }
     }

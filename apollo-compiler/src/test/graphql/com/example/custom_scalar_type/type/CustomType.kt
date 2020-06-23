@@ -6,31 +6,30 @@
 package com.example.custom_scalar_type.type
 
 import com.apollographql.apollo.api.ScalarType
-import java.lang.Class
 import kotlin.String
 
 enum class CustomType : ScalarType {
   DATE {
     override fun typeName(): String = "Date"
 
-    override fun javaType(): Class<*> = java.util.Date::class.java
-  },
-
-  UNSUPPORTEDTYPE {
-    override fun typeName(): String = "UnsupportedType"
-
-    override fun javaType(): Class<*> = kotlin.Any::class.java
-  },
-
-  URL {
-    override fun typeName(): String = "URL"
-
-    override fun javaType(): Class<*> = java.lang.String::class.java
+    override fun className(): String = "java.util.Date"
   },
 
   ID {
     override fun typeName(): String = "ID"
 
-    override fun javaType(): Class<*> = java.lang.Integer::class.java
+    override fun className(): String = "kotlin.Int"
+  },
+
+  URL {
+    override fun typeName(): String = "URL"
+
+    override fun className(): String = "kotlin.String"
+  },
+
+  UNSUPPORTEDTYPE {
+    override fun typeName(): String = "UnsupportedType"
+
+    override fun className(): String = "kotlin.Any"
   }
 }

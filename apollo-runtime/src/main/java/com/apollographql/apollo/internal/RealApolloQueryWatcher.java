@@ -4,8 +4,8 @@ import com.apollographql.apollo.ApolloCall;
 import com.apollographql.apollo.ApolloQueryWatcher;
 import com.apollographql.apollo.api.Operation;
 import com.apollographql.apollo.api.Response;
+import com.apollographql.apollo.api.internal.ApolloLogger;
 import com.apollographql.apollo.api.internal.Optional;
-import com.apollographql.apollo.api.internal.Utils;
 import com.apollographql.apollo.cache.normalized.ApolloStore;
 import com.apollographql.apollo.exception.ApolloCanceledException;
 import com.apollographql.apollo.exception.ApolloException;
@@ -14,13 +14,12 @@ import com.apollographql.apollo.exception.ApolloNetworkException;
 import com.apollographql.apollo.exception.ApolloParseException;
 import com.apollographql.apollo.fetcher.ApolloResponseFetchers;
 import com.apollographql.apollo.fetcher.ResponseFetcher;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import static com.apollographql.apollo.api.internal.Utils.checkNotNull;
 import static com.apollographql.apollo.internal.CallState.ACTIVE;
@@ -37,7 +36,7 @@ final class RealApolloQueryWatcher<T> implements ApolloQueryWatcher<T> {
   private final ApolloCallTracker tracker;
   final ApolloStore.RecordChangeSubscriber recordChangeSubscriber = new ApolloStore.RecordChangeSubscriber() {
     @Override public void onCacheRecordsChanged(Set<String> changedRecordKeys) {
-      if (dependentKeys.isEmpty() || !Utils.areDisjoint(dependentKeys, changedRecordKeys)) {
+      if (dependentKeys.isEmpty() || !areDisjoint(dependentKeys, changedRecordKeys)) {
         refetch();
       }
     }
@@ -45,8 +44,7 @@ final class RealApolloQueryWatcher<T> implements ApolloQueryWatcher<T> {
   private final AtomicReference<CallState> state = new AtomicReference<>(IDLE);
   private final AtomicReference<ApolloCall.Callback<T>> originalCallback = new AtomicReference<>();
 
-  RealApolloQueryWatcher(RealApolloCall<T> originalCall, ApolloStore apolloStore, ApolloLogger logger,
-      ApolloCallTracker tracker) {
+  RealApolloQueryWatcher(RealApolloCall<T> originalCall, ApolloStore apolloStore, ApolloLogger logger, ApolloCallTracker tracker) {
     this.activeCall = originalCall;
     this.apolloStore = apolloStore;
     this.logger = logger;
@@ -126,7 +124,10 @@ final class RealApolloQueryWatcher<T> implements ApolloQueryWatcher<T> {
         throw new IllegalStateException("Unknown state");
 
     }
+  }
 
+  @NotNull @Override public ApolloQueryWatcher<T> clone() {
+    return new RealApolloQueryWatcher<>(activeCall.clone(), apolloStore, logger, tracker);
   }
 
   private ApolloCall.Callback<T> callbackProxy() {
@@ -137,7 +138,7 @@ final class RealApolloQueryWatcher<T> implements ApolloQueryWatcher<T> {
           logger.d("onResponse for watched operation: %s. No callback present.", operation().name().name());
           return;
         }
-        dependentKeys = response.dependentKeys();
+        dependentKeys = response.getDependentKeys();
         apolloStore.subscribe(recordChangeSubscriber);
         callback.get().onResponse(response);
       }
@@ -158,6 +159,15 @@ final class RealApolloQueryWatcher<T> implements ApolloQueryWatcher<T> {
           callback.get().onFailure(e);
         }
       }
+
+      @Override public void onStatusEvent(@NotNull ApolloCall.StatusEvent event) {
+        ApolloCall.Callback<T> callback = originalCallback.get();
+        if (callback == null) {
+          logger.d("onStatusEvent for operation: %s. No callback present.", operation().name().name());
+          return;
+        }
+        callback.onStatusEvent(event);
+      }
     };
   }
 
@@ -168,7 +178,7 @@ final class RealApolloQueryWatcher<T> implements ApolloQueryWatcher<T> {
         tracker.registerQueryWatcher(this);
         break;
       case CANCELED:
-        throw new ApolloCanceledException("Call is cancelled.");
+        throw new ApolloCanceledException();
       case TERMINATED:
       case ACTIVE:
         throw new IllegalStateException("Already Executed");
@@ -209,4 +219,30 @@ final class RealApolloQueryWatcher<T> implements ApolloQueryWatcher<T> {
     }
   }
 
+  /**
+   * Checks if two {@link Set} are disjoint. Returns true if the sets don't have a single common element. Also returns
+   * true if either of the sets is null.
+   *
+   * @param setOne the first set
+   * @param setTwo the second set
+   * @param <E> the value type contained within the sets
+   * @return True if the sets don't have a single common element or if either of the sets is null.
+   */
+  private static <E> boolean areDisjoint(Set<E> setOne, Set<E> setTwo) {
+    if (setOne == null || setTwo == null) {
+      return true;
+    }
+    Set<E> smallerSet = setOne;
+    Set<E> largerSet = setTwo;
+    if (setOne.size() > setTwo.size()) {
+      smallerSet = setTwo;
+      largerSet = setOne;
+    }
+    for (E el : smallerSet) {
+      if (largerSet.contains(el)) {
+        return false;
+      }
+    }
+    return true;
+  }
 }
