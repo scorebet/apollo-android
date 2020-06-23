@@ -104,7 +104,7 @@ public class ApolloAutoPersistedQueryInterceptorTest {
               )
           );
         } else if (proceedAsyncInvocationCount == 2) {
-          assertThat(request.sendQueryDocument).isTrue();
+          assertThat(request.sendQueryDocument).isFalse();
           assertThat(request.autoPersistQueries).isTrue();
           callBack.onResponse(
               new ApolloInterceptor.InterceptorResponse(
@@ -157,7 +157,7 @@ public class ApolloAutoPersistedQueryInterceptorTest {
               )
           );
         } else if (proceedAsyncInvocationCount == 2) {
-          assertThat(request.sendQueryDocument).isTrue();
+          assertThat(request.sendQueryDocument).isFalse();
           assertThat(request.autoPersistQueries).isTrue();
           callBack.onResponse(
               new ApolloInterceptor.InterceptorResponse(
