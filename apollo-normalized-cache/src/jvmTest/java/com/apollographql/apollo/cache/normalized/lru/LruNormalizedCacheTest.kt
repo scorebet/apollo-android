@@ -7,6 +7,8 @@ import com.apollographql.apollo.cache.normalized.NormalizedCache
 import com.apollographql.apollo.cache.normalized.Record
 import com.apollographql.apollo.cache.normalized.RecordFieldJsonAdapter
 import com.google.common.truth.Truth.assertThat
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.util.concurrent.TimeUnit
 
@@ -246,6 +248,25 @@ class LruNormalizedCacheTest {
     val record2 = lruCache.loadRecord("key2", CacheHeaders.NONE)
     assertThat(record1).isNull()
     assertThat(record2).isNull()
+  }
+
+  @Test
+  fun test_getFromCacheIfPresent() {
+    val lruCache = createLruNormalizedCache()
+    val testRecord1 = createTestRecord("1")
+    val testRecordSet: MutableCollection<Record> = HashSet()
+    testRecordSet.add(testRecord1)
+    lruCache.merge(testRecordSet, CacheHeaders.NONE)
+    assertEquals(testRecord1, lruCache.getFromCacheIfPresent("key1"))
+
+    val testRecord2 = createTestRecord("2")
+    lruCache.merge(testRecord2, CacheHeaders.NONE)
+
+    assertEquals(testRecord2, lruCache.getFromCacheIfPresent("key2"))
+
+    val testRecord3 = createTestRecord("2")
+    lruCache.merge(testRecord3, builder().addHeader(ApolloCacheHeaders.DO_NOT_STORE, "true").build())
+    assertNull(lruCache.getFromCacheIfPresent("key3"))
   }
 
   private fun createLruNormalizedCache() =
