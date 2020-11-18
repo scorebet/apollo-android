@@ -103,7 +103,7 @@ subprojects {
   val downloadBaselineJarTaskProvider = tasks.register("downloadBaseLineJar", DownloadFileTask::class.java) {
     val group = project.property("GROUP") as String
     val artifact = project.property("POM_ARTIFACT_ID") as String
-    val version = "1.2.1-SNAPSHOT"
+    val version = "1.2.1"
     val jar = "$artifact-$version.jar"
 
     url.set("https://jcenter.bintray.com/${group.replace(".", "/")}/$artifact/$version/$jar")
