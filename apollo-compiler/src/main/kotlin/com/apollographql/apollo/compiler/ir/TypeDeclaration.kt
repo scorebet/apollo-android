@@ -4,7 +4,12 @@ import com.apollographql.apollo.compiler.Annotations
 import com.apollographql.apollo.compiler.ClassNames
 import com.apollographql.apollo.compiler.InputTypeSpecBuilder
 import com.apollographql.apollo.compiler.escapeJavaReservedWord
-import com.squareup.javapoet.*
+import com.squareup.javapoet.ClassName
+import com.squareup.javapoet.CodeBlock
+import com.squareup.javapoet.FieldSpec
+import com.squareup.javapoet.MethodSpec
+import com.squareup.javapoet.ParameterSpec
+import com.squareup.javapoet.TypeSpec
 import javax.lang.model.element.Modifier
 
 data class TypeDeclaration(
@@ -29,7 +34,7 @@ data class TypeDeclaration(
             }
           }
           .apply {
-            if (value.isDeprecated == true) {
+            if (value.deprecationReason != null) {
               addAnnotation(Annotations.DEPRECATED)
               if (!value.deprecationReason.isNullOrBlank()) {
                 addJavadoc("@deprecated \$L\n", value.deprecationReason)

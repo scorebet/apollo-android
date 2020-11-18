@@ -4,9 +4,11 @@ import com.apollographql.apollo.api.Mutation;
 import com.apollographql.apollo.api.OperationName;
 import com.apollographql.apollo.api.Query;
 import com.apollographql.apollo.cache.CacheHeaders;
+import com.apollographql.apollo.fetcher.ResponseFetcher;
 import com.apollographql.apollo.request.RequestHeaders;
-
 import org.jetbrains.annotations.NotNull;
+
+import java.util.List;
 
 /**
  * A call prepared to execute GraphQL mutation operation.
@@ -14,12 +16,25 @@ import org.jetbrains.annotations.NotNull;
 public interface ApolloMutationCall<T> extends ApolloCall<T> {
 
   /**
+   * Sets the {@link CacheHeaders} to use for this call. {@link com.apollographql.apollo.interceptor.FetchOptions} will
+   * be configured with this headers, and will be accessible from the {@link ResponseFetcher} used for this call.
+   *
+   * Deprecated, use {@link #toBuilder()} to mutate the ApolloCall
+   *
+   * @param cacheHeaders the {@link CacheHeaders} that will be passed with records generated from this request to {@link
+   *                     com.apollographql.apollo.cache.normalized.NormalizedCache}. Standardized cache headers are
+   *                     defined in {@link com.apollographql.apollo.cache.ApolloCacheHeaders}.
+   * @return The ApolloCall object with the provided {@link CacheHeaders}.
+   */
+  @Deprecated @NotNull @Override ApolloMutationCall<T> cacheHeaders(@NotNull CacheHeaders cacheHeaders);
+
+  /**
    * <p>Sets a list of {@link ApolloQueryWatcher} query names to be re-fetched once this mutation completed.</p>
    *
    * @param operationNames array of {@link OperationName} query names to be re-fetched
    * @return {@link ApolloMutationCall} that will trigger re-fetching provided queries
    */
-  @NotNull ApolloMutationCall<T> refetchQueries(@NotNull OperationName... operationNames);
+  @Deprecated @NotNull ApolloMutationCall<T> refetchQueries(@NotNull OperationName... operationNames);
 
   /**
    * <p>Sets a list of {@link Query} to be re-fetched once this mutation completed.</p>
@@ -27,9 +42,7 @@ public interface ApolloMutationCall<T> extends ApolloCall<T> {
    * @param queries array of {@link Query} to be re-fetched
    * @return {@link ApolloMutationCall} that will trigger re-fetching provided queries
    */
-  @NotNull ApolloMutationCall<T> refetchQueries(@NotNull Query... queries);
-
-  @NotNull @Override ApolloMutationCall<T> cacheHeaders(@NotNull CacheHeaders cacheHeaders);
+  @Deprecated @NotNull ApolloMutationCall<T> refetchQueries(@NotNull Query... queries);
 
   /**
    * Sets the {@link RequestHeaders} to use for this call. These headers will be added to the HTTP request when
@@ -39,10 +52,44 @@ public interface ApolloMutationCall<T> extends ApolloCall<T> {
    * @param requestHeaders The {@link RequestHeaders} to use for this request.
    * @return The ApolloCall object with the provided {@link RequestHeaders}.
    */
-  @NotNull ApolloMutationCall<T> requestHeaders(@NotNull RequestHeaders requestHeaders);
+  @Deprecated @NotNull ApolloMutationCall<T> requestHeaders(@NotNull RequestHeaders requestHeaders);
 
-  @NotNull @Override ApolloMutationCall<T> clone();
+  @Deprecated @NotNull @Override ApolloMutationCall<T> clone();
 
+  @NotNull @Override ApolloMutationCall.Builder<T> toBuilder();
+
+  interface Builder<T> extends ApolloCall.Builder<T> {
+    @NotNull @Override ApolloMutationCall<T> build();
+
+    @NotNull @Override Builder<T> cacheHeaders(@NotNull CacheHeaders cacheHeaders);
+
+    /**
+     * <p>Sets a list of {@link ApolloQueryWatcher} query names to be re-fetched once this mutation completed.</p>
+     *
+     * @param operationNames array of {@link OperationName} query names to be re-fetched
+     * @return The Builder
+     */
+    @NotNull Builder<T> refetchQueryNames(@NotNull List<OperationName> operationNames);
+
+    /**
+     * <p>Sets a list of {@link Query} to be re-fetched once this mutation completed.</p>
+     *
+     * @param queries array of {@link Query} to be re-fetched
+     * @return The Builder
+     */
+    @NotNull Builder<T> refetchQueries(@NotNull List<Query> queries);
+
+    /**
+     * Sets the {@link RequestHeaders} to use for this call. These headers will be added to the HTTP request when
+     * it is issued. These headers will be applied after any headers applied by application-level interceptors
+     * and will override those if necessary.
+     *
+     * @param requestHeaders The {@link RequestHeaders} to use for this request.
+     * @return The Builder
+     */
+    @NotNull Builder<T> requestHeaders(@NotNull RequestHeaders requestHeaders);
+
+  }
   /**
    * Factory for creating {@link ApolloMutationCall} calls.
    */

@@ -1,64 +1,28 @@
 package com.apollographql.apollo.interceptor
 
-import com.apollographql.apollo.ApolloError
-import com.apollographql.apollo.ApolloException
 import com.apollographql.apollo.api.ApolloExperimental
-import com.apollographql.apollo.api.Response
-import com.apollographql.apollo.network.GraphQLRequest
-import com.apollographql.apollo.network.GraphQLResponse
+import com.apollographql.apollo.api.Mutation
+import com.apollographql.apollo.api.Operation
+import com.apollographql.apollo.api.Query
+import com.apollographql.apollo.api.Subscription
 import com.apollographql.apollo.network.NetworkTransport
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.emptyFlow
 
 @ApolloExperimental
 @ExperimentalCoroutinesApi
 class NetworkRequestInterceptor(
-    private val networkTransport: NetworkTransport
+    private val networkTransport: NetworkTransport,
+    private val subscriptionNetworkTransport: NetworkTransport
 ) : ApolloRequestInterceptor {
 
-  override fun <T> intercept(request: ApolloRequest<T>, interceptorChain: ApolloInterceptorChain): Flow<Response<T>> {
-    return flow { emit(request.toNetworkRequest()) }
-        .flatMapLatest { networkRequest -> networkTransport.execute(networkRequest) }
-        .map { networkResponse -> networkResponse.parse(request) }
-  }
-
-  private fun <T> GraphQLResponse.parse(request: ApolloRequest<T>): Response<T> {
-    val response = try {
-      request.operation.parse(
-          source = body,
-          scalarTypeAdapters = request.scalarTypeAdapters
-      )
-    } catch (e: Exception) {
-      throw ApolloException(
-          message = "Failed to parse GraphQL network response",
-          error = ApolloError.ParseError,
-          executionContext = request.executionContext,
-          cause = e
-      )
-    } finally {
-      body.close()
-    }
-    return response.copy(executionContext = request.executionContext + response.executionContext)
-  }
-
-  private fun ApolloRequest<*>.toNetworkRequest(): GraphQLRequest {
-    return try {
-      GraphQLRequest(
-          operationName = operation.name().name(),
-          operationId = operation.operationId(),
-          document = operation.queryDocument(),
-          variables = operation.variables().marshal(scalarTypeAdapters)
-      )
-    } catch (e: Exception) {
-      throw ApolloException(
-          message = "Failed to compose GraphQL network request",
-          error = ApolloError.SerializationError,
-          executionContext = executionContext,
-          cause = e
-      )
+  override fun <D : Operation.Data> intercept(request: ApolloRequest<D>, chain: ApolloInterceptorChain): Flow<ApolloResponse<D>> {
+    return when (request.operation) {
+      is Query -> networkTransport.execute(request = request, executionContext = request.executionContext)
+      is Mutation -> networkTransport.execute(request = request, executionContext = request.executionContext)
+      is Subscription -> subscriptionNetworkTransport.execute(request = request, executionContext = request.executionContext)
+      else -> emptyFlow() // should never happen
     }
   }
 }

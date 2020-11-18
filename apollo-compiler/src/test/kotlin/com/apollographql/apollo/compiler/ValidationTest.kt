@@ -1,11 +1,11 @@
 package com.apollographql.apollo.compiler
 
-import com.apollographql.apollo.compiler.parser.GraphQLDocumentParseException
-import com.apollographql.apollo.compiler.parser.GraphQLDocumentParser
-import com.apollographql.apollo.compiler.parser.GraphQLParseException
-import com.apollographql.apollo.compiler.parser.Schema
+import com.apollographql.apollo.compiler.ir.IRBuilder
+import com.apollographql.apollo.compiler.parser.error.DocumentParseException
+import com.apollographql.apollo.compiler.parser.error.ParseException
+import com.apollographql.apollo.compiler.parser.graphql.GraphQLDocumentParser
+import com.apollographql.apollo.compiler.parser.introspection.IntrospectionSchema
 import com.google.common.truth.Truth.assertThat
-import org.junit.Assert
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,18 +19,20 @@ class ValidationTest(name: String, private val graphQLFile: File) {
   @Test
   fun testValidation() {
     val schemaFile = File("src/test/validation/schema.json")
-    val schema = Schema(schemaFile)
+    val schema = IntrospectionSchema(schemaFile)
     val packageNameProvider = DefaultPackageNameProvider(
-        rootFolders = listOf(graphQLFile.parent),
-        schemaFile = schemaFile,
-        rootPackageName = ""
+        roots = Roots(listOf(graphQLFile.parentFile)),
+        rootPackageName = "",
+        schemaPackageName = "",
+        packageName = null
     )
 
     try {
-      GraphQLDocumentParser(schema, packageNameProvider).parse(setOf(graphQLFile))
+      val documentParseResult = GraphQLDocumentParser(schema, packageNameProvider).parse(setOf(graphQLFile))
+      IRBuilder(schema, "", null, null, false).build(documentParseResult)
       fail("parse expected to fail but was successful")
     } catch (e: Exception) {
-      if (e is GraphQLDocumentParseException || e is GraphQLParseException) {
+      if (e is DocumentParseException || e is ParseException) {
         val expected = File(graphQLFile.parent, graphQLFile.nameWithoutExtension + ".error").readText().removeSuffix("\n")
         val actual = e.message!!.removePrefix("\n").removeSuffix("\n").replace(graphQLFile.absolutePath, "/${graphQLFile.name}")
         assertThat(actual).isEqualTo(expected)

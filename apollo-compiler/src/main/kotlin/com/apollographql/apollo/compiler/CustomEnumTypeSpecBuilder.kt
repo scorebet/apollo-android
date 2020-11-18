@@ -9,7 +9,8 @@ import java.util.*
 import javax.lang.model.element.Modifier
 
 class CustomEnumTypeSpecBuilder(
-    val context: CodeGenerationContext
+    val context: CodeGenerationContext,
+    val scalarTypes: Set<String>
 ) {
   fun build(): TypeSpec =
       TypeSpec.enumBuilder(className(context))
@@ -20,6 +21,7 @@ class CustomEnumTypeSpecBuilder(
 
   private fun TypeSpec.Builder.addEnumConstants(): TypeSpec.Builder {
     context.customTypeMap
+        .filterKeys { scalarTypes.contains(it) }
         .toSortedMap()
         .forEach { mapping ->
           val constantName = mapping.key.removeSuffix("!").toUpperCase(Locale.ENGLISH)
@@ -51,6 +53,6 @@ class CustomEnumTypeSpecBuilder(
           .build()
 
   companion object {
-    fun className(context: CodeGenerationContext): ClassName = ClassName.get(context.packageNameProvider.typesPackageName, "CustomType")
+    fun className(context: CodeGenerationContext): ClassName = ClassName.get(context.ir.typesPackageName, "CustomType")
   }
 }

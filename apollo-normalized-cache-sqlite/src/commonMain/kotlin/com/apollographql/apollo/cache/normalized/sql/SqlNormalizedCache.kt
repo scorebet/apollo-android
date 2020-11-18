@@ -7,9 +7,11 @@ import com.apollographql.apollo.cache.normalized.NormalizedCache
 import com.apollographql.apollo.cache.normalized.Record
 import com.apollographql.apollo.cache.normalized.RecordFieldJsonAdapter
 import okio.IOException
+import kotlin.reflect.KClass
 
 class SqlNormalizedCache internal constructor(
     private val recordFieldAdapter: RecordFieldJsonAdapter,
+    private val database: ApolloDatabase,
     private val cacheQueries: CacheQueries
 ) : NormalizedCache() {
 
@@ -23,6 +25,14 @@ class SqlNormalizedCache internal constructor(
       return record
     }
     return nextCache?.loadRecord(key, cacheHeaders)
+  }
+
+  override fun loadRecords(keys: Collection<String>, cacheHeaders: CacheHeaders): Collection<Record> {
+    val records = selectRecordsForKey(keys)
+    if (cacheHeaders.hasHeader(EVICT_AFTER_READ)) {
+      deleteRecords(records.map { it.key })
+    }
+    return records
   }
 
   override fun clearAll() {
@@ -45,17 +55,41 @@ class SqlNormalizedCache internal constructor(
     }
   }
 
-  override fun performMerge(apolloRecord: Record, cacheHeaders: CacheHeaders): Set<String> {
-    val oldRecord = selectRecordForKey(apolloRecord.key)
+  override fun merge(recordSet: Collection<Record>, cacheHeaders: CacheHeaders): Set<String> {
+    lateinit var records: Set<String>
+    database.transaction {
+      records = super.merge(recordSet, cacheHeaders)
+    }
+    return records
+  }
+
+  override fun performMerge(apolloRecord: Record, oldRecord: Record?, cacheHeaders: CacheHeaders): Set<String> {
     return if (oldRecord == null) {
       cacheQueries.insert(key = apolloRecord.key, record = recordFieldAdapter.toJson(apolloRecord.fields))
-      emptySet()
+      apolloRecord.keys()
     } else {
       oldRecord.mergeWith(apolloRecord).also {
         if (it.isNotEmpty()) {
           cacheQueries.update(record = recordFieldAdapter.toJson(oldRecord.fields), key = oldRecord.key)
         }
       }
+    }
+  }
+
+  fun selectRecordsForKey(keys: Collection<String>): List<Record> {
+    return try {
+      // sqllite has a limit of 999 named arguments.
+      keys.chunked(999).flatMap { chunkedKeys ->
+        cacheQueries.recordsForKeys(chunkedKeys)
+            .executeAsList()
+            .map {
+              Record.builder(it.key)
+                  .addFields(recordFieldAdapter.from(it.record)!!)
+                  .build()
+            }
+      }
+    } catch (e: IOException) {
+      emptyList()
     }
   }
 
@@ -91,7 +125,26 @@ class SqlNormalizedCache internal constructor(
     return changes > 0
   }
 
+  fun deleteRecords(keys: Collection<String>): Boolean {
+    var changes = 0L
+    cacheQueries.transaction {
+      cacheQueries.deleteRecords(keys)
+      changes = cacheQueries.changes().executeAsOne()
+    }
+    return changes == keys.size.toLong()
+  }
+
   fun createRecord(key: String, fields: String) {
     cacheQueries.insert(key = key, record = fields)
+  }
+
+  @ExperimentalStdlibApi
+  override fun dump() = buildMap<KClass<*>, Map<String, Record>> {
+    put(this@SqlNormalizedCache::class, cacheQueries.selectRecords().executeAsList().map {
+      it.key to Record.builder(it.key)
+          .addFields(recordFieldAdapter.from(it.record)!!)
+          .build()
+    }.toMap())
+    putAll(nextCache?.dump().orEmpty())
   }
 }

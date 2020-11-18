@@ -110,7 +110,8 @@ data class TestQuery(
      * The name of the starship
      */
     val name: String,
-    val coordinates: List<List<Double>>?
+    val coordinates: List<List<Double>>?,
+    val shieldLevel: Double
   ) {
     fun marshaller(): ResponseFieldMarshaller = ResponseFieldMarshaller.invoke { writer ->
       writer.writeString(RESPONSE_FIELDS[0], this@Starship.__typename)
@@ -124,6 +125,7 @@ data class TestQuery(
           }
         }
       }
+      writer.writeDouble(RESPONSE_FIELDS[4], this@Starship.shieldLevel)
     }
 
     companion object {
@@ -131,7 +133,8 @@ data class TestQuery(
           ResponseField.forString("__typename", "__typename", null, false, null),
           ResponseField.forCustomType("id", "id", null, false, CustomType.ID, null),
           ResponseField.forString("name", "name", null, false, null),
-          ResponseField.forList("coordinates", "coordinates", null, true, null)
+          ResponseField.forList("coordinates", "coordinates", null, true, null),
+          ResponseField.forDouble("shieldLevel", "shieldLevel", null, false, null)
           )
 
       operator fun invoke(reader: ResponseReader): Starship = reader.run {
@@ -143,11 +146,13 @@ data class TestQuery(
             reader.readDouble()
           }.map { it!! }
         }?.map { it!! }
+        val shieldLevel = readDouble(RESPONSE_FIELDS[4])!!
         Starship(
           __typename = __typename,
           id = id,
           name = name,
-          coordinates = coordinates
+          coordinates = coordinates,
+          shieldLevel = shieldLevel
         )
       }
 
@@ -190,7 +195,7 @@ data class TestQuery(
 
   companion object {
     const val OPERATION_ID: String =
-        "a4c440f9a7ea17b55ba60d3ac9603f8be88a1db31c679f55982eb9f57b5b6181"
+        "d27812d04b877735a608f497de910d80edaa021cf018b2d9cb022c95fa1f90c7"
 
     val QUERY_DOCUMENT: String = QueryDocumentMinifier.minify(
           """
@@ -200,6 +205,7 @@ data class TestQuery(
           |    id
           |    name
           |    coordinates
+          |    shieldLevel
           |  }
           |}
           """.trimMargin()

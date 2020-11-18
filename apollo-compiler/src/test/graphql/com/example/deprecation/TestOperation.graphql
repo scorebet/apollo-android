@@ -3,5 +3,7 @@ query TestQuery($episode: Episode) {
     name
     deprecated
     deprecatedBool
+    deprecatedWithNoReason
+    deprecatedWithBlankReason
   }
 }

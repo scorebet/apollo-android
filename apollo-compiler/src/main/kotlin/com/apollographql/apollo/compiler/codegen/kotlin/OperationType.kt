@@ -23,6 +23,7 @@ import com.apollographql.apollo.compiler.codegen.kotlin.KotlinCodeGen.createMapp
 import com.apollographql.apollo.compiler.codegen.kotlin.KotlinCodeGen.marshallerFunSpec
 import com.apollographql.apollo.compiler.codegen.kotlin.KotlinCodeGen.responseFieldsPropertySpec
 import com.apollographql.apollo.compiler.codegen.kotlin.KotlinCodeGen.suppressWarningsAnnotation
+import com.apollographql.apollo.compiler.codegen.kotlin.KotlinCodeGen.toDefaultValueCodeBlock
 import com.apollographql.apollo.compiler.codegen.kotlin.KotlinCodeGen.toMapperFun
 import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.CodeBlock
@@ -106,12 +107,10 @@ internal fun OperationType.typeSpec(targetPackage: String, generateAsInternal: B
     .addFunction(parseByteStringFunSpec())
     .addFunction(composeRequestBodyFunSpec())
     .addFunction(composeRequestBodyWithDefaultAdaptersFunSpec())
-    .applyIf(type == OperationType.Type.QUERY) {
-      addFunction(composeRequestBodyFunSpecForQuery())
-    }
+    .addFunction(composeRequestBodyFunSpecForQuery())
     .addTypes(nestedObjects.map { (ref, type) ->
       if (ref == data) {
-        type.toOperationDataTypeSpec(data.name)
+        type.toOperationDataTypeSpec(name = data.name, generateAsInternal = generateAsInternal)
       } else {
         type.typeSpec()
       }
@@ -167,11 +166,14 @@ private val OperationType.primaryConstructorSpec: FunSpec
     return FunSpec
         .constructorBuilder()
         .addParameters(variables.fields.map { variable ->
-          val typeName = variable.type.asTypeName()
+          val typeName = variable.type.asTypeName().let {
+            if (variable.isOptional) Input::class.asClassName().parameterizedBy(it) else it
+          }
+
           ParameterSpec
               .builder(
                   name = variable.name,
-                  type = if (variable.isOptional) Input::class.asClassName().parameterizedBy(typeName) else typeName
+                  type = typeName
               )
               .applyIf(variable.isOptional) { defaultValue("%T.absent()", Input::class.asClassName()) }
               .build()
@@ -234,7 +236,7 @@ private fun InputType.variablesMarshallerSpec(thisRef: String): FunSpec {
       .build()
 }
 
-private fun ObjectType.toOperationDataTypeSpec(name: String) =
+private fun ObjectType.toOperationDataTypeSpec(name: String, generateAsInternal: Boolean) =
     TypeSpec
         .classBuilder(name)
         .addModifiers(KModifier.DATA)
@@ -258,6 +260,7 @@ private fun ObjectType.toOperationDataTypeSpec(name: String) =
             .build()
         )
         .addFunction(fields.marshallerFunSpec(override = true, thisRef = name))
+        .applyIf(fragmentsType != null) { addType(fragmentsType!!.fragmentsTypeSpec(generateAsInternal)) }
         .build()
 
 private fun OperationType.parseWithAdaptersFunSpec() = FunSpec.builder("parse")

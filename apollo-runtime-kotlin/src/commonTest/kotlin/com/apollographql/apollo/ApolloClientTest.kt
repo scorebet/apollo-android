@@ -1,14 +1,10 @@
 package com.apollographql.apollo
 
-import com.apollographql.apollo.api.ExecutionContext
 import com.apollographql.apollo.mock.MockNetworkTransport
 import com.apollographql.apollo.mock.MockQuery
 import com.apollographql.apollo.mock.TestLoggerExecutor
-import com.apollographql.apollo.network.GraphQLResponse
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.single
-import okio.Buffer
-import okio.ByteString.Companion.encodeUtf8
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -31,12 +27,7 @@ class ApolloClientTest {
 
   @Test
   fun `when query and success network response, assert success`() {
-    networkTransport.offer(
-        GraphQLResponse(
-            body = Buffer().write("{\"data\":{\"name\":\"MockQuery\"}}".encodeUtf8()),
-            executionContext = ExecutionContext.Empty
-        )
-    )
+    networkTransport.offer("{\"data\":{\"name\":\"MockQuery\"}")
 
     val response = runBlocking {
       apolloClient
@@ -46,17 +37,12 @@ class ApolloClientTest {
     }
 
     assertNotNull(response.data)
-    assertEquals(expected = MockQuery.Data, actual = response.data)
+    assertEquals(expected = MockQuery.Data("{\"data\":{\"name\":\"MockQuery\"}"), actual = response.data)
   }
 
   @Test
   fun `when query and malformed network response, assert parse error`() {
-    networkTransport.offer(
-        GraphQLResponse(
-            body = Buffer(),
-            executionContext = ExecutionContext.Empty
-        )
-    )
+    networkTransport.offer("")
 
     val result = runBlocking {
       kotlin.runCatching {
@@ -69,25 +55,14 @@ class ApolloClientTest {
 
     assertTrue(result.isFailure)
     result.onFailure { e ->
-      assertTrue(e is ApolloException)
-      assertTrue(e.error is ApolloError.ParseError)
+      assertTrue(e is ApolloParseException)
     }
   }
 
   @Test
   fun `when query and malformed network response, assert success after retry`() {
-    networkTransport.offer(
-        GraphQLResponse(
-            body = Buffer(),
-            executionContext = ExecutionContext.Empty
-        )
-    )
-    networkTransport.offer(
-        GraphQLResponse(
-            body = Buffer().write("{\"data\":{\"name\":\"MockQuery\"}}".encodeUtf8()),
-            executionContext = ExecutionContext.Empty
-        )
-    )
+    networkTransport.offer("")
+    networkTransport.offer("{\"data\":{\"name\":\"MockQuery\"}}")
 
     val response = runBlocking {
       apolloClient
@@ -98,6 +73,6 @@ class ApolloClientTest {
     }
 
     assertNotNull(response.data)
-    assertEquals(expected = MockQuery.Data, actual = response.data)
+    assertEquals(expected = MockQuery.Data("{\"data\":{\"name\":\"MockQuery\"}}"), actual = response.data)
   }
 }

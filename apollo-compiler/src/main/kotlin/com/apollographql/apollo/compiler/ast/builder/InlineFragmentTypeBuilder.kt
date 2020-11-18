@@ -32,8 +32,8 @@ internal fun InlineFragment.inlineFragmentField(
       name = "As$normalizedClassName",
       schemaTypeName = typeCondition,
       description = description,
-      fragmentRefs = fragmentRefs,
-      inlineFragments = emptyList(),
+      fragmentRefs = fragments,
+      inlineFragments = inlineFragments,
       fields = fields,
       kind = ObjectType.Kind.InlineFragment(
           superInterface = fragmentSuper,
@@ -48,8 +48,7 @@ internal fun InlineFragment.inlineFragmentField(
       type = FieldType.Fragment(typeRef),
       description = "",
       isOptional = true,
-      isDeprecated = false,
-      deprecationReason = "",
+      deprecationReason = null,
       arguments = emptyMap(),
       conditions = conditions.filter { it.kind == Condition.Kind.BOOLEAN.rawValue }.map { directive ->
         ObjectType.Field.Condition.Directive(variableName = directive.variableName, inverted = directive.inverted)

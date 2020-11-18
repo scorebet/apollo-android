@@ -52,6 +52,8 @@ public final class ReviewInput implements InputType {
 
   private final Input<Boolean> booleanWithDefaultValue;
 
+  private final Input<Boolean> booleanNonOptional;
+
   private final Input<List<List<String>>> listOfListOfString;
 
   private final Input<List<List<Episode>>> listOfListOfEnum;
@@ -61,6 +63,8 @@ public final class ReviewInput implements InputType {
   private final Input<List<List<ColorInput>>> listOfListOfObject;
 
   private final Input<String> capitalizedField;
+
+  private final Input<Integer> capitalizedInt;
 
   private transient volatile int $hashCode;
 
@@ -73,9 +77,10 @@ public final class ReviewInput implements InputType {
       Input<List<Episode>> listOfEnums, Input<List<Integer>> listOfInt,
       Input<List<String>> listOfString, @NotNull List<String> listOfStringNonOptional,
       Input<List<ColorInput>> listOfInputTypes, Input<Boolean> booleanWithDefaultValue,
-      Input<List<List<String>>> listOfListOfString, Input<List<List<Episode>>> listOfListOfEnum,
-      Input<List<List<Object>>> listOfListOfCustom,
-      Input<List<List<ColorInput>>> listOfListOfObject, Input<String> capitalizedField) {
+      Input<Boolean> booleanNonOptional, Input<List<List<String>>> listOfListOfString,
+      Input<List<List<Episode>>> listOfListOfEnum, Input<List<List<Object>>> listOfListOfCustom,
+      Input<List<List<ColorInput>>> listOfListOfObject, Input<String> capitalizedField,
+      Input<Integer> capitalizedInt) {
     this.stars = stars;
     this.nullableIntFieldWithDefaultValue = nullableIntFieldWithDefaultValue;
     this.commentary = commentary;
@@ -91,11 +96,13 @@ public final class ReviewInput implements InputType {
     this.listOfStringNonOptional = listOfStringNonOptional;
     this.listOfInputTypes = listOfInputTypes;
     this.booleanWithDefaultValue = booleanWithDefaultValue;
+    this.booleanNonOptional = booleanNonOptional;
     this.listOfListOfString = listOfListOfString;
     this.listOfListOfEnum = listOfListOfEnum;
     this.listOfListOfCustom = listOfListOfCustom;
     this.listOfListOfObject = listOfListOfObject;
     this.capitalizedField = capitalizedField;
+    this.capitalizedInt = capitalizedInt;
   }
 
   /**
@@ -206,6 +213,13 @@ public final class ReviewInput implements InputType {
   /**
    * for test purpose only
    */
+  public @Nullable Boolean booleanNonOptional() {
+    return this.booleanNonOptional.value;
+  }
+
+  /**
+   * for test purpose only
+   */
   public @Nullable List<List<String>> listOfListOfString() {
     return this.listOfListOfString.value;
   }
@@ -236,6 +250,13 @@ public final class ReviewInput implements InputType {
    */
   public @Nullable String capitalizedField() {
     return this.capitalizedField.value;
+  }
+
+  /**
+   * for test purpose only
+   */
+  public @Nullable Integer capitalizedInt() {
+    return this.capitalizedInt.value;
   }
 
   public static Builder builder() {
@@ -326,6 +347,9 @@ public final class ReviewInput implements InputType {
         if (booleanWithDefaultValue.defined) {
           writer.writeBoolean("booleanWithDefaultValue", booleanWithDefaultValue.value);
         }
+        if (booleanNonOptional.defined) {
+          writer.writeBoolean("booleanNonOptional", booleanNonOptional.value);
+        }
         if (listOfListOfString.defined) {
           writer.writeList("listOfListOfString", listOfListOfString.value != null ? new InputFieldWriter.ListWriter() {
             @Override
@@ -401,6 +425,9 @@ public final class ReviewInput implements InputType {
         if (capitalizedField.defined) {
           writer.writeString("CapitalizedField", capitalizedField.value);
         }
+        if (capitalizedInt.defined) {
+          writer.writeInt("CapitalizedInt", capitalizedInt.value);
+        }
       }
     };
   }
@@ -440,6 +467,8 @@ public final class ReviewInput implements InputType {
       h *= 1000003;
       h ^= booleanWithDefaultValue.hashCode();
       h *= 1000003;
+      h ^= booleanNonOptional.hashCode();
+      h *= 1000003;
       h ^= listOfListOfString.hashCode();
       h *= 1000003;
       h ^= listOfListOfEnum.hashCode();
@@ -449,6 +478,8 @@ public final class ReviewInput implements InputType {
       h ^= listOfListOfObject.hashCode();
       h *= 1000003;
       h ^= capitalizedField.hashCode();
+      h *= 1000003;
+      h ^= capitalizedInt.hashCode();
       $hashCode = h;
       $hashCodeMemoized = true;
     }
@@ -477,11 +508,13 @@ public final class ReviewInput implements InputType {
        && this.listOfStringNonOptional.equals(that.listOfStringNonOptional)
        && this.listOfInputTypes.equals(that.listOfInputTypes)
        && this.booleanWithDefaultValue.equals(that.booleanWithDefaultValue)
+       && this.booleanNonOptional.equals(that.booleanNonOptional)
        && this.listOfListOfString.equals(that.listOfListOfString)
        && this.listOfListOfEnum.equals(that.listOfListOfEnum)
        && this.listOfListOfCustom.equals(that.listOfListOfCustom)
        && this.listOfListOfObject.equals(that.listOfListOfObject)
-       && this.capitalizedField.equals(that.capitalizedField);
+       && this.capitalizedField.equals(that.capitalizedField)
+       && this.capitalizedInt.equals(that.capitalizedInt);
     }
     return false;
   }
@@ -517,6 +550,8 @@ public final class ReviewInput implements InputType {
 
     private Input<Boolean> booleanWithDefaultValue = Input.fromNullable(true);
 
+    private Input<Boolean> booleanNonOptional = Input.absent();
+
     private Input<List<List<String>>> listOfListOfString = Input.absent();
 
     private Input<List<List<Episode>>> listOfListOfEnum = Input.absent();
@@ -526,6 +561,8 @@ public final class ReviewInput implements InputType {
     private Input<List<List<ColorInput>>> listOfListOfObject = Input.absent();
 
     private Input<String> capitalizedField = Input.absent();
+
+    private Input<Integer> capitalizedInt = Input.absent();
 
     Builder() {
     }
@@ -653,6 +690,14 @@ public final class ReviewInput implements InputType {
     /**
      * for test purpose only
      */
+    public Builder booleanNonOptional(@Nullable Boolean booleanNonOptional) {
+      this.booleanNonOptional = Input.fromNullable(booleanNonOptional);
+      return this;
+    }
+
+    /**
+     * for test purpose only
+     */
     public Builder listOfListOfString(@Nullable List<List<String>> listOfListOfString) {
       this.listOfListOfString = Input.fromNullable(listOfListOfString);
       return this;
@@ -687,6 +732,14 @@ public final class ReviewInput implements InputType {
      */
     public Builder capitalizedField(@Nullable String capitalizedField) {
       this.capitalizedField = Input.fromNullable(capitalizedField);
+      return this;
+    }
+
+    /**
+     * for test purpose only
+     */
+    public Builder capitalizedInt(@Nullable Integer capitalizedInt) {
+      this.capitalizedInt = Input.fromNullable(capitalizedInt);
       return this;
     }
 
@@ -781,6 +834,14 @@ public final class ReviewInput implements InputType {
     /**
      * for test purpose only
      */
+    public Builder booleanNonOptionalInput(@NotNull Input<Boolean> booleanNonOptional) {
+      this.booleanNonOptional = Utils.checkNotNull(booleanNonOptional, "booleanNonOptional == null");
+      return this;
+    }
+
+    /**
+     * for test purpose only
+     */
     public Builder listOfListOfStringInput(@NotNull Input<List<List<String>>> listOfListOfString) {
       this.listOfListOfString = Utils.checkNotNull(listOfListOfString, "listOfListOfString == null");
       return this;
@@ -818,11 +879,19 @@ public final class ReviewInput implements InputType {
       return this;
     }
 
+    /**
+     * for test purpose only
+     */
+    public Builder capitalizedIntInput(@NotNull Input<Integer> capitalizedInt) {
+      this.capitalizedInt = Utils.checkNotNull(capitalizedInt, "capitalizedInt == null");
+      return this;
+    }
+
     public ReviewInput build() {
       Utils.checkNotNull(favoriteColor, "favoriteColor == null");
       Utils.checkNotNull(nonNullableEnumWithDefaultValue, "nonNullableEnumWithDefaultValue == null");
       Utils.checkNotNull(listOfStringNonOptional, "listOfStringNonOptional == null");
-      return new ReviewInput(stars, nullableIntFieldWithDefaultValue, commentary, favoriteColor, enumWithDefaultValue, nonNullableEnumWithDefaultValue, nullableEnum, listOfCustomScalar, customScalar, listOfEnums, listOfInt, listOfString, listOfStringNonOptional, listOfInputTypes, booleanWithDefaultValue, listOfListOfString, listOfListOfEnum, listOfListOfCustom, listOfListOfObject, capitalizedField);
+      return new ReviewInput(stars, nullableIntFieldWithDefaultValue, commentary, favoriteColor, enumWithDefaultValue, nonNullableEnumWithDefaultValue, nullableEnum, listOfCustomScalar, customScalar, listOfEnums, listOfInt, listOfString, listOfStringNonOptional, listOfInputTypes, booleanWithDefaultValue, booleanNonOptional, listOfListOfString, listOfListOfEnum, listOfListOfCustom, listOfListOfObject, capitalizedField, capitalizedInt);
     }
   }
 }

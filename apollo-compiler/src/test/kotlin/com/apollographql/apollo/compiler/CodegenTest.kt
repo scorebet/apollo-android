@@ -1,7 +1,10 @@
 package com.apollographql.apollo.compiler
 
-import com.apollographql.apollo.compiler.parser.GraphQLDocumentParser
-import com.apollographql.apollo.compiler.parser.Schema
+import com.apollographql.apollo.api.internal.QueryDocumentMinifier
+import com.apollographql.apollo.compiler.TestUtils.checkTestFixture
+import com.apollographql.apollo.compiler.TestUtils.shouldUpdateTestFixtures
+import com.apollographql.apollo.compiler.parser.sdl.GraphSdlSchema
+import com.apollographql.apollo.compiler.parser.sdl.toIntrospectionSchema
 import com.google.common.truth.Truth.assertAbout
 import com.google.testing.compile.JavaFileObjects
 import com.google.testing.compile.JavaSourcesSubjectFactory.javaSources
@@ -12,17 +15,19 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
 import java.io.File
-import java.lang.Exception
 
 @RunWith(Parameterized::class)
-class CodeGenTest(private val folder: File) {
-  @Test
-  fun generateExpectedClasses() {
-    generateExpectedClasses(arguments(folder = folder, generateKotlinModels = false))
-    generateExpectedClasses(arguments(folder = folder, generateKotlinModels = true))
+class CodegenTest(private val folder: File, private val testLanguage: TestLanguage) {
+  enum class TestLanguage {
+    Java,
+    Kotlin
   }
 
-  data class GeneratedFile(val expected: File, val actual: File, val relativePath: String)
+  @Test
+  fun generateExpectedClasses() {
+    val args = arguments(folder = folder, generateKotlinModels = testLanguage == TestLanguage.Kotlin)
+    generateExpectedClasses(args)
+  }
 
   private fun generateExpectedClasses(args: GraphQLCompiler.Arguments) {
     args.outputDir.deleteRecursively()
@@ -50,7 +55,7 @@ class CodeGenTest(private val folder: File) {
       val actual = File(actualRoot, relativePath)
       if (!actual.exists()) {
         if (shouldUpdateTestFixtures()) {
-          println("removing actual file: ${expected.absolutePath}")
+          println("removing stale expected file: ${expected.absolutePath}")
           expected.delete()
           return@forEach
         } else {
@@ -76,39 +81,10 @@ class CodeGenTest(private val folder: File) {
 
     // And that they compile
     if (!args.generateKotlinModels) {
-      val javaFileObjects = actualFiles.map {
-        val qualifiedName = it.path
-            .substringBeforeLast(".")
-            .split(File.separator)
-            .joinToString(".")
-
-        JavaFileObjects.forSourceLines(qualifiedName,
-            it.readLines())
-      }.toList()
-
-      assertAbout(javaSources()).that(javaFileObjects).compilesWithoutError()
+      JavaCompiler.assertCompiles(actualFiles.toSet())
     } else {
-      val kotlinFiles = actualFiles.map {
-        SourceFile.kotlin(it.name, it.readText())
-      }.toList()
-
-      val result = KotlinCompilation().apply {
-        jvmTarget = "1.8"
-        sources = kotlinFiles
-
-        val expectedWarnings = folder.name in listOf("deprecation", "custom_scalar_type_warnings", "arguments_complex", "arguments_simple")
-        allWarningsAsErrors = expectedWarnings.not()
-        inheritClassPath = true
-        messageOutputStream = System.out // see diagnostics in real time
-      }.compile()
-
-      if (result.exitCode != KotlinCompilation.ExitCode.OK) {
-        val compilationErrorMessages = "\\ne: .*\\n+".toRegex().find(result.messages)?.groupValues ?: emptyList()
-        val errorMessages = compilationErrorMessages.joinToString(prefix = "\n", separator = "\n", postfix = "\n") {
-          "`${it.replace("\n", "")}`"
-        }
-        fail("Failed to compile generated Kotlin files due to compiler errors: $errorMessages")
-      }
+      val expectedWarnings = folder.name in listOf("deprecation", "custom_scalar_type_warnings", "arguments_complex", "arguments_simple")
+      KotlinCompiler.assertCompiles(actualFiles.toSet(), !expectedWarnings)
     }
   }
 
@@ -157,17 +133,6 @@ class CodeGenTest(private val folder: File) {
         else -> false
       }
 
-      val schemaJson = folder.listFiles()!!.find { it.isFile && it.name == "schema.json" }
-          ?: File("src/test/graphql/schema.json")
-      val schema = Schema(schemaJson)
-      val graphQLFile = File(folder, "TestOperation.graphql")
-
-      val packageNameProvider = DefaultPackageNameProvider(
-          rootFolders = listOf(folder.absolutePath),
-          schemaFile = schemaJson,
-          rootPackageName = "com.example.${folder.name}"
-      )
-
       val operationIdGenerator = when (folder.name) {
         "operation_id_generator" -> object : OperationIdGenerator {
           override fun apply(operationDocument: String, operationFilepath: String): String {
@@ -180,18 +145,32 @@ class CodeGenTest(private val folder: File) {
       }
 
       val enumAsSealedClassPatternFilters = when(folder.name) {
-        "arguments_complex" -> listOf(".*") // test all pattern matching
-        "arguments_simple" -> listOf("Bla-bla", "Yada-yada", "Ep.*de") // test multiple pattern matching
-        "enum_type" -> listOf("Bla") // test not matching
-        else -> emptyList()
+        "arguments_complex" -> setOf(".*") // test all pattern matching
+        "arguments_simple" -> setOf("Bla-bla", "Yada-yada", "Ep.*de") // test multiple pattern matching
+        "enum_type" -> setOf("Bla") // test not matching
+        else -> emptySet()
       }
 
-      val ir = GraphQLDocumentParser(schema, packageNameProvider).parse(setOf(graphQLFile))
+      val packageName = when(folder.name) {
+        // TODO reorganize tests so that we don't have to make this a child of "com.example.fragment_package_name"
+        "fragment_package_name" -> "com.example.fragment_package_name.another"
+        else -> null
+      }
+
+      val schemaFile = folder.listFiles()!!.find { it.isFile && it.name == "schema.sdl" }
+          ?: File("src/test/graphql/schema.sdl")
+      
+      val graphqlFiles = setOf(File(folder, "TestOperation.graphql"))
+      val operationOutputGenerator = OperationOutputGenerator.DefaultOperationOuputGenerator(operationIdGenerator)
+
       val language = if (generateKotlinModels) "kotlin" else "java"
       return GraphQLCompiler.Arguments(
-          ir = ir,
+          rootPackageName = "com.example.${folder.name}",
+          rootFolders = listOf(folder),
+          graphqlFiles = graphqlFiles,
+          schemaFile = schemaFile,
           outputDir = File("build/generated/test/${folder.name}/$language"),
-          operationIdGenerator = operationIdGenerator,
+          operationOutputGenerator = operationOutputGenerator,
           customTypeMap = customTypeMap,
           generateKotlinModels = generateKotlinModels,
           nullableValueType = nullableValueType,
@@ -200,43 +179,29 @@ class CodeGenTest(private val folder: File) {
           useJavaBeansSemanticNaming = useJavaBeansSemanticNaming,
           suppressRawTypesWarning = suppressRawTypesWarning,
           generateVisitorForPolymorphicDatatypes = generateVisitorForPolymorphicDatatypes,
-          packageNameProvider = packageNameProvider,
           generateAsInternal = generateAsInternal,
           kotlinMultiPlatformProject = true,
-          enumAsSealedClassPatternFilters = enumAsSealedClassPatternFilters
+          enumAsSealedClassPatternFilters = enumAsSealedClassPatternFilters,
+          metadataOutputFile = File("build/generated/test/${folder.name}/metadata/$language"),
+          packageName = packageName
       )
     }
 
     @JvmStatic
-    @Parameterized.Parameters(name = "{0}")
-    fun data(): Collection<File> {
-      return File("src/test/graphql/com/example/")
+    @Parameterized.Parameters(name = "{0}-{1}")
+    fun data() =  File("src/test/graphql/com/example/")
           .listFiles()!!
           .filter { it.isDirectory }
-    }
-
-    private fun shouldUpdateTestFixtures(): Boolean {
-      return when (System.getProperty("updateTestFixtures")?.trim()) {
-        "on", "true", "1" -> true
-        else -> false
-      }
-    }
-
-    fun checkTestFixture(actual: File, expected: File) {
-      val actualText = actual.readText()
-      val expectedText = expected.readText()
-
-      if (actualText != expectedText) {
-        if (shouldUpdateTestFixtures()) {
-          expected.writeText(actualText)
-        } else {
-          throw Exception("""generatedFile content doesn't match the expectedFile content.
-      |If you changed the compiler recently, you need to update the testFixtures.
-      |Run the tests with `-DupdateTestFixtures=true` to do so.
-      |generatedFile: ${actual.path}
-      |expectedFile: ${expected.path}""".trimMargin())
-        }
-      }
-    }
+          .let {
+            it.map {
+              arrayOf(it, TestLanguage.Kotlin)
+            } + it.filter {
+              // TODO: This specific test currently doesn't generate valid Java code
+              // see https://github.com/apollographql/apollo-android/issues/2676
+              !it.name.contains("test_inline")
+            }.map {
+              arrayOf(it, TestLanguage.Java)
+            }
+          }
   }
 }

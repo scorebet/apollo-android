@@ -1,6 +1,5 @@
 package com.apollographql.apollo.compiler.ast.builder
 
-import com.apollographql.apollo.compiler.OperationIdGenerator
 import com.apollographql.apollo.compiler.ast.CustomTypes
 import com.apollographql.apollo.compiler.ast.EnumType
 import com.apollographql.apollo.compiler.ast.FieldType
@@ -10,16 +9,24 @@ import com.apollographql.apollo.compiler.escapeKotlinReservedWord
 import com.apollographql.apollo.compiler.ir.CodeGenerationIR
 import com.apollographql.apollo.compiler.ir.ScalarType
 import com.apollographql.apollo.compiler.ir.TypeDeclaration
+import com.apollographql.apollo.compiler.operationoutput.OperationOutput
 
 internal fun CodeGenerationIR.ast(
     customTypeMap: CustomTypes,
     typesPackageName: String,
-    fragmentsPackage: String,
     useSemanticNaming: Boolean,
-    operationIdGenerator: OperationIdGenerator
+    operationOutput: OperationOutput
 ): Schema {
-  val enums = typesUsed.filter { it.kind == TypeDeclaration.KIND_ENUM }.map { it.ast() }
-  val inputTypes = typesUsed.filter { it.kind == TypeDeclaration.KIND_INPUT_OBJECT_TYPE }.map {
+  val enums = typeDeclarations.filter {
+    it.kind == TypeDeclaration.KIND_ENUM
+        // && enumsToGenerate.contains(it.name) // filtering is done later as the rest of the codegen needs all enums
+  }.map {
+    it.ast()
+  }
+  val inputTypes = typeDeclarations.filter {
+    it.kind == TypeDeclaration.KIND_INPUT_OBJECT_TYPE
+        && inputObjectsToGenerate.contains(it.name)
+  }.map {
     it.ast(
         enums = enums,
         customTypeMap = customTypeMap,
@@ -27,13 +34,14 @@ internal fun CodeGenerationIR.ast(
     )
   }
   val irFragments = fragments.associateBy { it.fragmentName }
-  val fragments = fragments.map {
+  val fragments = fragments.filter {
+    fragmentsToGenerate.contains(it.fragmentName)
+  }.map {
     it.ast(
         Context(
             customTypeMap = customTypeMap,
             enums = enums,
             typesPackageName = typesPackageName,
-            fragmentsPackage = fragmentsPackage,
             fragments = irFragments
         )
     )
@@ -45,15 +53,19 @@ internal fun CodeGenerationIR.ast(
             customTypeMap = customTypeMap,
             enums = enums,
             typesPackageName = typesPackageName,
-            fragmentsPackage = fragmentsPackage,
             fragments = irFragments
         ),
-        operationIdGenerator = operationIdGenerator
+        operationOutput = operationOutput
     )
   }
+
+  val generatedCustomTypes = customTypeMap.filterKeys {
+    scalarsToGenerate.contains(it)
+  }
+  val capitalizedEnums = enumsToGenerate.map { it.capitalize() }
   return Schema(
-      enums = enums,
-      customTypes = customTypeMap,
+      enums = enums.filter { capitalizedEnums.contains(it.name) },
+      customTypes = CustomTypes(generatedCustomTypes),
       inputTypes = inputTypes,
       fragments = fragments,
       operations = operations

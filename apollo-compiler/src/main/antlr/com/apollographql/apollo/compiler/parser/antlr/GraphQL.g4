@@ -28,7 +28,7 @@ package com.apollographql.apollo.compiler.parser.antlr;
 }
 
 document
-   : definition+
+   : definition*
    ;
 
 definition
@@ -96,7 +96,7 @@ directives
    ;
 
 directive
-   : '@' NAME ':' valueOrVariable | '@' NAME | '@' NAME '(' argument ')'
+   : '@' NAME arguments?
    ;
 
 typeCondition

@@ -86,6 +86,10 @@ internal data class ReviewInput(
   /**
    * for test purpose only
    */
+  val booleanNonOptional: Input<Boolean> = Input.absent(),
+  /**
+   * for test purpose only
+   */
   val listOfListOfString: Input<List<List<String>>> = Input.absent(),
   /**
    * for test purpose only
@@ -102,7 +106,11 @@ internal data class ReviewInput(
   /**
    * for test purpose only
    */
-  val capitalizedField: Input<String> = Input.absent()
+  val capitalizedField: Input<String> = Input.absent(),
+  /**
+   * for test purpose only
+   */
+  val capitalizedInt: Input<Int> = Input.absent()
 ) : InputType {
   override fun marshaller(): InputFieldMarshaller = InputFieldMarshaller.invoke { writer ->
     writer.writeInt("stars", this@ReviewInput.stars)
@@ -180,6 +188,9 @@ internal data class ReviewInput(
     if (this@ReviewInput.booleanWithDefaultValue.defined) {
       writer.writeBoolean("booleanWithDefaultValue", this@ReviewInput.booleanWithDefaultValue.value)
     }
+    if (this@ReviewInput.booleanNonOptional.defined) {
+      writer.writeBoolean("booleanNonOptional", this@ReviewInput.booleanNonOptional.value)
+    }
     if (this@ReviewInput.listOfListOfString.defined) {
       writer.writeList("listOfListOfString", this@ReviewInput.listOfListOfString.value?.let {
           value ->
@@ -237,6 +248,9 @@ internal data class ReviewInput(
     }
     if (this@ReviewInput.capitalizedField.defined) {
       writer.writeString("CapitalizedField", this@ReviewInput.capitalizedField.value)
+    }
+    if (this@ReviewInput.capitalizedInt.defined) {
+      writer.writeInt("capitalizedInt", this@ReviewInput.capitalizedInt.value)
     }
   }
 }

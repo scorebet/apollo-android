@@ -20,34 +20,28 @@ kotlin {
     }
   }
 
-  jvm {
-    withJava()
-  }
+  jvm()
 
   sourceSets {
     val commonMain by getting {
       dependencies {
         api(project(":apollo-api"))
-        api(groovy.util.Eval.x(project, "x.dep.okio.okioMultiplatform"))
-        implementation(kotlin("stdlib-common"))
-        implementation(groovy.util.Eval.x(project, "x.dep.kotlin.coroutines.coreCommon"))
+        api(groovy.util.Eval.x(project, "x.dep.okio"))
+        api(groovy.util.Eval.x(project, "x.dep.uuid"))
+        api(groovy.util.Eval.x(project, "x.dep.kotlin.coroutines"))
       }
     }
 
     val jvmMain by getting {
       dependsOn(commonMain)
       dependencies {
-        implementation(kotlin("stdlib"))
-        implementation(groovy.util.Eval.x(project, "x.dep.okHttp.okHttp4"))
-        implementation(groovy.util.Eval.x(project, "x.dep.kotlin.coroutines.core"))
+        api(groovy.util.Eval.x(project, "x.dep.okHttp.okHttp4"))
       }
     }
 
     val iosMain by getting {
       dependsOn(commonMain)
       dependencies {
-        api(project(":apollo-api"))
-        implementation(groovy.util.Eval.x(project, "x.dep.kotlin.coroutines.coreNative"))
       }
     }
 

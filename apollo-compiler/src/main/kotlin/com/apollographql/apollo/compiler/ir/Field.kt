@@ -1,9 +1,21 @@
 package com.apollographql.apollo.compiler.ir
 
-import com.apollographql.apollo.compiler.*
-import com.squareup.javapoet.*
+import com.apollographql.apollo.compiler.ClassNames
+import com.apollographql.apollo.compiler.JavaTypeResolver
+import com.apollographql.apollo.compiler.SchemaTypeSpecBuilder
+import com.apollographql.apollo.compiler.escapeJavaReservedWord
+import com.apollographql.apollo.compiler.singularize
+import com.apollographql.apollo.compiler.toJavaBeansSemanticNaming
+import com.apollographql.apollo.compiler.withBuilder
+import com.squareup.javapoet.CodeBlock
+import com.squareup.javapoet.FieldSpec
+import com.squareup.javapoet.MethodSpec
+import com.squareup.javapoet.TypeName
+import com.squareup.javapoet.TypeSpec
+import com.squareup.moshi.JsonClass
 import javax.lang.model.element.Modifier
 
+@JsonClass(generateAdapter = true)
 data class Field(
     val responseName: String,
     val fieldName: String,
@@ -15,8 +27,7 @@ data class Field(
     val fragmentRefs: List<FragmentRef>,
     val inlineFragments: List<InlineFragment> = emptyList(),
     val description: String = "",
-    val isDeprecated: Boolean = false,
-    val deprecationReason: String = "",
+    val deprecationReason: String? = null, // null if not deprecated
     val conditions: List<Condition> = emptyList(),
     val sourceLocation: SourceLocation
 ) : CodeGenerator {
@@ -28,7 +39,7 @@ data class Field(
         description = typeDescription,
         schemaType = type,
         fields = fields,
-        fragmentRefs = fragmentRefs,
+        fragments = fragmentRefs,
         inlineFragments = inlineFragments,
         context = context,
         abstract = abstract
@@ -58,7 +69,7 @@ data class Field(
         .addStatement("return this.\$L", responseName.escapeJavaReservedWord())
         .let { if (description.isNotEmpty()) it.addJavadoc("\$L\n", description) else it }
         .let {
-          if (isDeprecated && deprecationReason.isNotEmpty()) {
+          if (deprecationReason != null) {
             it.addJavadoc("@deprecated \$L\n", deprecationReason)
           } else {
             it
@@ -134,8 +145,8 @@ data class Field(
   }
 
   private fun toTypeName(responseType: String, context: CodeGenerationContext): TypeName {
-    val packageName = if (isNonScalar()) "" else context.packageNameProvider.typesPackageName
-    return JavaTypeResolver(context, packageName, isDeprecated).resolve(responseType, isOptional())
+    val packageName = if (isNonScalar()) "" else context.ir.typesPackageName
+    return JavaTypeResolver(context, packageName, deprecationReason != null).resolve(responseType, isOptional())
   }
 
   private fun methodResponseType(): String {

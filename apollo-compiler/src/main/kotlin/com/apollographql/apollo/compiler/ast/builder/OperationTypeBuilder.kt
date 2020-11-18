@@ -7,17 +7,19 @@ import com.apollographql.apollo.compiler.ast.ObjectType
 import com.apollographql.apollo.compiler.ast.OperationType
 import com.apollographql.apollo.compiler.escapeKotlinReservedWord
 import com.apollographql.apollo.compiler.ir.Operation
+import com.apollographql.apollo.compiler.operationoutput.OperationOutput
+import com.apollographql.apollo.compiler.operationoutput.findOperationId
 
 internal fun Operation.ast(
     operationClassName: String,
     context: Context,
-    operationIdGenerator: OperationIdGenerator
+    operationOutput: OperationOutput
 ): OperationType {
   val dataTypeRef = context.registerObjectType(
       name = "Data",
       schemaTypeName = "",
       description = "Data from the response after executing this GraphQL operation",
-      fragmentRefs = emptyList(),
+      fragmentRefs = fragments,
       inlineFragments = emptyList(),
       fields = fields,
       singularize = false,
@@ -30,10 +32,11 @@ internal fun Operation.ast(
     else -> throw IllegalArgumentException("Unsupported GraphQL operation type: $operationType")
   }
 
-  val operationId = operationIdGenerator.apply(QueryDocumentMinifier.minify(sourceWithFragments), filePath)
+  val operationId = operationOutput.findOperationId(operationName, packageName)
 
   return OperationType(
       name = operationClassName,
+      packageName = packageName,
       type = operationType,
       operationName = operationName,
       description = description,

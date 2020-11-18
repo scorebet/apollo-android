@@ -41,7 +41,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery.Data>, TestQuery.Variables> {
-  public static final String OPERATION_ID = "a4c440f9a7ea17b55ba60d3ac9603f8be88a1db31c679f55982eb9f57b5b6181";
+  public static final String OPERATION_ID = "d27812d04b877735a608f497de910d80edaa021cf018b2d9cb022c95fa1f90c7";
 
   public static final String QUERY_DOCUMENT = QueryDocumentMinifier.minify(
     "query TestQuery($id: ID!) {\n"
@@ -50,6 +50,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
         + "    id\n"
         + "    name\n"
         + "    coordinates\n"
+        + "    shieldLevel\n"
         + "  }\n"
         + "}"
   );
@@ -290,7 +291,8 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
       ResponseField.forString("__typename", "__typename", null, false, Collections.<ResponseField.Condition>emptyList()),
       ResponseField.forCustomType("id", "id", null, false, CustomType.ID, Collections.<ResponseField.Condition>emptyList()),
       ResponseField.forString("name", "name", null, false, Collections.<ResponseField.Condition>emptyList()),
-      ResponseField.forList("coordinates", "coordinates", null, true, Collections.<ResponseField.Condition>emptyList())
+      ResponseField.forList("coordinates", "coordinates", null, true, Collections.<ResponseField.Condition>emptyList()),
+      ResponseField.forDouble("shieldLevel", "shieldLevel", null, false, Collections.<ResponseField.Condition>emptyList())
     };
 
     final @NotNull String __typename;
@@ -301,6 +303,8 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
 
     final Optional<List<List<Double>>> coordinates;
 
+    final double shieldLevel;
+
     private transient volatile String $toString;
 
     private transient volatile int $hashCode;
@@ -308,11 +312,12 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
     private transient volatile boolean $hashCodeMemoized;
 
     public Starship(@NotNull String __typename, @NotNull String id, @NotNull String name,
-        @Nullable List<List<Double>> coordinates) {
+        @Nullable List<List<Double>> coordinates, double shieldLevel) {
       this.__typename = Utils.checkNotNull(__typename, "__typename == null");
       this.id = Utils.checkNotNull(id, "id == null");
       this.name = Utils.checkNotNull(name, "name == null");
       this.coordinates = Optional.fromNullable(coordinates);
+      this.shieldLevel = shieldLevel;
     }
 
     public @NotNull String __typename() {
@@ -335,6 +340,10 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
 
     public Optional<List<List<Double>>> coordinates() {
       return this.coordinates;
+    }
+
+    public double shieldLevel() {
+      return this.shieldLevel;
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -360,6 +369,7 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
               }
             }
           });
+          writer.writeDouble($responseFields[4], shieldLevel);
         }
       };
     }
@@ -371,7 +381,8 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
           + "__typename=" + __typename + ", "
           + "id=" + id + ", "
           + "name=" + name + ", "
-          + "coordinates=" + coordinates
+          + "coordinates=" + coordinates + ", "
+          + "shieldLevel=" + shieldLevel
           + "}";
       }
       return $toString;
@@ -387,7 +398,8 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
         return this.__typename.equals(that.__typename)
          && this.id.equals(that.id)
          && this.name.equals(that.name)
-         && this.coordinates.equals(that.coordinates);
+         && this.coordinates.equals(that.coordinates)
+         && Double.doubleToLongBits(this.shieldLevel) == Double.doubleToLongBits(that.shieldLevel);
       }
       return false;
     }
@@ -404,6 +416,8 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
         h ^= name.hashCode();
         h *= 1000003;
         h ^= coordinates.hashCode();
+        h *= 1000003;
+        h ^= Double.valueOf(shieldLevel).hashCode();
         $hashCode = h;
         $hashCodeMemoized = true;
       }
@@ -427,7 +441,8 @@ public final class TestQuery implements Query<TestQuery.Data, Optional<TestQuery
             });
           }
         });
-        return new Starship(__typename, id, name, coordinates);
+        final double shieldLevel = reader.readDouble($responseFields[4]);
+        return new Starship(__typename, id, name, coordinates, shieldLevel);
       }
     }
   }

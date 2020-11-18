@@ -14,8 +14,16 @@ class ScalarTypeAdapters(val customAdapters: Map<ScalarType, CustomTypeAdapter<*
 
   @Suppress("UNCHECKED_CAST")
   fun <T : Any> adapterFor(scalarType: ScalarType): CustomTypeAdapter<T> {
+    /**
+     * Look in user-registered adapters by scalar type name first
+     */
     var customTypeAdapter: CustomTypeAdapter<*>? = customTypeAdapters[scalarType.typeName()]
     if (customTypeAdapter == null) {
+      /**
+       * If none is found, provide a default adapter based on the implementation class name
+       * This saves the user the hassle of registering a scalar adapter for mapping to widespread such as Long, Map, etc...
+       * The ScalarType must still be declared in the Gradle plugin configuration.
+       */
       customTypeAdapter = DEFAULT_ADAPTERS[scalarType.className()]
     }
     return requireNotNull(customTypeAdapter) {
@@ -76,11 +84,12 @@ class ScalarTypeAdapters(val customAdapters: Map<ScalarType, CustomTypeAdapter<*
         } +
         mapOf("com.apollographql.apollo.api.FileUpload" to object : CustomTypeAdapter<FileUpload> {
           override fun decode(value: CustomTypeValue<*>): FileUpload {
+            // TODO: is there a valid use case for decoding a FileUpload or should we throw here?
             return FileUpload("", value.value?.toString() ?: "")
           }
 
           override fun encode(value: FileUpload): CustomTypeValue<*> {
-            return GraphQLString(value.mimetype)
+            return GraphQLNull
           }
         }) +
         createDefaultScalarTypeAdapter("java.util.Map", "kotlin.collections.Map") { value ->

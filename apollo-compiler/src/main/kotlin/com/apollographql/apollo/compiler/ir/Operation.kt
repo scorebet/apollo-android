@@ -1,13 +1,14 @@
 package com.apollographql.apollo.compiler.ir
 
 import com.apollographql.apollo.api.Operation
-import com.apollographql.apollo.compiler.SchemaTypeSpecBuilder
 import com.apollographql.apollo.compiler.withBuilder
+import com.apollographql.apollo.compiler.SchemaTypeSpecBuilder
 import com.squareup.javapoet.TypeSpec
 import javax.lang.model.element.Modifier
 
 data class Operation(
     val operationName: String,
+    val packageName: String,
     val operationType: String,
     val description: String,
     val variables: List<Variable>,
@@ -15,6 +16,7 @@ data class Operation(
     val sourceWithFragments: String,
     val fields: List<Field>,
     val filePath: String,
+    val fragments: List<FragmentRef>,
     val fragmentsReferenced: List<String>
 ) : CodeGenerator {
 
@@ -23,7 +25,7 @@ data class Operation(
           typeName = DATA_TYPE_NAME,
           description = "Data from the response after executing this GraphQL operation",
           fields = fields,
-          fragmentRefs = emptyList(),
+          fragments = fragments,
           inlineFragments = emptyList(),
           context = context,
           abstract = abstract

@@ -5,14 +5,17 @@ import com.apollographql.apollo.compiler.SchemaTypeSpecBuilder
 import com.apollographql.apollo.compiler.withBuilder
 import com.squareup.javapoet.FieldSpec
 import com.squareup.javapoet.TypeSpec
+import com.squareup.moshi.JsonClass
 import javax.lang.model.element.Modifier
 
+@JsonClass(generateAdapter = true)
 data class InlineFragment(
     val typeCondition: String,
     val possibleTypes: List<String> = emptyList(),
     val description: String,
     val fields: List<Field>,
-    val fragmentRefs: List<FragmentRef>,
+    val inlineFragments: List<InlineFragment>,
+    val fragments: List<FragmentRef>,
     val sourceLocation: SourceLocation,
     val conditions: List<Condition> = emptyList()
 ) : CodeGenerator {
@@ -21,9 +24,10 @@ data class InlineFragment(
     return SchemaTypeSpecBuilder(
         typeName = formatClassName(),
         description = description,
+        schemaType = typeCondition,
         fields = fields,
-        fragmentRefs = fragmentRefs,
-        inlineFragments = emptyList(),
+        fragments = fragments,
+        inlineFragments = inlineFragments,
         context = context,
         abstract = abstract
     )

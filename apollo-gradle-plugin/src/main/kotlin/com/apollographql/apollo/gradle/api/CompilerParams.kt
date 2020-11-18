@@ -1,11 +1,14 @@
 package com.apollographql.apollo.gradle.api
 
+import com.apollographql.apollo.api.ApolloExperimental
 import com.apollographql.apollo.compiler.OperationIdGenerator
+import com.apollographql.apollo.compiler.OperationOutputGenerator
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.file.SourceDirectorySet
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
+import org.gradle.api.provider.SetProperty
 
 /**
  * CompilerParams contains all the parameters needed to invoke the apollo compiler.
@@ -22,7 +25,21 @@ interface CompilerParams {
   val generateKotlinModels: Property<Boolean>
 
   /**
-   * Whether to generate OperationOutput.json. OperationOutput.json contains information such as
+   * Warn if using a deprecated field
+   *
+   * Default value: true
+   */
+  val warnOnDeprecatedUsages: Property<Boolean>
+
+  /**
+   * Fail the build if there are warnings. This is not named `allWarningAsErrors` to avoid nameclashes with the Kotlin options
+   *
+   * Default value: false
+   */
+  val failOnWarnings: Property<Boolean>
+
+  /**
+   * Whether to generate operationOutput.json. operationOutput.json contains information such as
    * operation id, name and complete source sent to the server. This can be used to upload
    * a query's exact content to a server that doesn't support automatic persisted queries.
    *
@@ -31,7 +48,6 @@ interface CompilerParams {
    * Default value: false
    */
   val generateOperationOutput: Property<Boolean>
-
 
   /**
    * For custom scalar types like Date, map from the GraphQL type to the jvm/kotlin type.
@@ -67,6 +83,34 @@ interface CompilerParams {
    * Default value: [OperationIdGenerator.Sha256]
    */
   val operationIdGenerator: Property<OperationIdGenerator>
+
+  /**
+   * A generator to generate the operation output from a list of operations.
+   * OperationOutputGenerator is similar to [OperationIdGenerator] but can work on lists. This is useful if you need
+   * to register/whitelist your operations on your server all at once.
+   *
+   * Example Md5 hash generator:
+   * ```groovy
+   * import com.apollographql.apollo.compiler.OperationIdGenerator
+   *
+   * apollo {
+   *   operationOutputGenerator = new OperationIdGenerator() {
+   *     String apply(List<operation operationDocument, String operationFilepath) {
+   *       return operationDocument.md5()
+   *     }
+   *
+   *     /**
+   *      * Use this version override to indicate an update to the implementation.
+   *      * This invalidates the current cache.
+   *      */
+   *     String version = "v1"
+   *   }
+   * }
+   * ```
+   *
+   * Default value: [OperationIdGenerator.Sha256]
+   */
+  val operationOutputGenerator: Property<OperationOutputGenerator>
 
   /**
    * The custom types code generate some warnings that might make the build fail.
@@ -129,11 +173,13 @@ interface CompilerParams {
   /**
    * The graphql files containing the queries.
    *
-   * By default, the plugin will use [Service.sourceFolder] to populate the graphqlSourceDirectorySet.
+   * By default, the plugin will use [Service.sourceFolder] to populate the graphqlSourceDirectorySet with all the matching .graphql or .gql files.
+   * You can change this behaviour by calling `graphqlSourceDirectorySet.srcDir("path/to/your/directory")` and specifying includes/excludes:
+   * graphqlSourceDirectorySet.srcDir("path/to/your/directory")
+   * graphqlSourceDirectorySet.include("**&#47;*.graphql")
+   * graphqlSourceDirectorySet.exclude("**&#47;schema.graphql")
    *
-   * You can override the default behaviour in either [ApolloExtension], [Service] or [CompilationUnit] by adding directories to graphqlSourceDirectorySet.
-   * If you override the default behaviour, you're responsible of setting the includes and excludes accordingly. Typically, you would
-   * set graphqlSourceDirectorySet.include("**&#47;*.graphql")
+   * It is an error to call `include` or `exclude` without calling `srcDir`
    *
    * Directories set on [ApolloExtension.graphqlSourceDirectorySet] or [Service.graphqlSourceDirectorySet] will not be used for test
    * variants as that would produce duplicate classes since the exact same files would be compiled for the main variants.
@@ -162,4 +208,43 @@ interface CompilerParams {
    * the client was compiled against an older schema that doesn't have knowledge of the new enums.
    */
   val sealedClassesForEnumsMatching: ListProperty<String>
+
+  /**
+   * Whether or not to generate Apollo metadata. Apollo metadata is used for multi-module support. Set this to true if you want other
+   * modules to be able to re-use fragments and types from this module.
+   *
+   * This is currently experimental and this API might change in the future.
+   *
+   * Default value: false
+   */
+  @ApolloExperimental
+  val generateApolloMetadata: Property<Boolean>
+
+  /**
+   * A list of [Regex] patterns for input/scalar/enum types that should be generated whether or not they are used by queries/fragments
+   * in this module. When using multiple modules, Apollo Android will generate all the types by default in the root module
+   * because the root module doesn't know what types are going to be used by dependent modules. This can be prohibitive in terms
+   * of compilation speed for large projects. If that's the case, opt-in the types that are used by multiple dependent modules here.
+   * You don't need to add types that are used by a single dependent module.
+   *
+   * This is currently experimental and this API might change in the future.
+   *
+   * Default value: if (generateApolloMetadata) listOf(".*") else listOf()
+   */
+  @ApolloExperimental
+  val alwaysGenerateTypesMatching: SetProperty<String>
+
+  /**
+   * Use the given package name and does not take into account the folders hierarchy.
+   *
+   * - Operations will be in `packageName`
+   * - Fragments will be in `packageName.fragment`
+   * - Input/Enum/Scalar types are not handled yet and will continue to be in the schemaPackageName
+   *
+   * This is currently experimental and this API might change in the future.
+   *
+   * Default value: false
+   */
+  @ApolloExperimental
+  val packageName: Property<String>
 }

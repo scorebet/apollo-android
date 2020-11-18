@@ -9,6 +9,8 @@ import kotlin.jvm.JvmStatic
  **/
 sealed class CustomTypeValue<T>(@JvmField val value: T) {
 
+  object GraphQLNull: CustomTypeValue<Unit>(Unit)
+
   /**
    * Represents a `String` value
    */
@@ -91,6 +93,7 @@ sealed class CustomTypeValue<T>(@JvmField val value: T) {
 
   companion object {
 
+    // TODO: should this method accept nullable values in case a scalar type is represented as 'null'?
     @JvmStatic
     @Suppress("UNCHECKED_CAST")
     fun fromRawValue(value: Any): CustomTypeValue<*> {
@@ -98,6 +101,7 @@ sealed class CustomTypeValue<T>(@JvmField val value: T) {
         is Map<*, *> -> GraphQLJsonObject(value as Map<String, Any>)
         is List<*> -> GraphQLJsonList(value as List<Any>)
         is Boolean -> GraphQLBoolean(value)
+        is BigDecimal -> GraphQLNumber(value.toNumber())
         is Number -> GraphQLNumber(value)
         else -> GraphQLString(value.toString())
       }

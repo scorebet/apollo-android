@@ -9,6 +9,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class SqlNormalizedCacheTest {
 
@@ -37,6 +38,16 @@ class SqlNormalizedCacheTest {
     val record = cache.selectRecordForKey(STANDARD_KEY)
     assertNotNull(record)
     assertEquals(expected = STANDARD_KEY, actual = record.key)
+  }
+
+  @Test
+  fun testMultipleRecordSelection() {
+    createRecord(STANDARD_KEY)
+    createRecord(QUERY_ROOT_KEY)
+    val selectionKeys = setOf(STANDARD_KEY, QUERY_ROOT_KEY)
+    val records = cache.selectRecordsForKey(selectionKeys)
+    val selectedKeys = records.map { it.key }.toSet()
+    assertEquals(selectionKeys, selectedKeys)
   }
 
   @Test
@@ -97,6 +108,19 @@ class SqlNormalizedCacheTest {
   }
 
   @Test
+  fun testHeader_evictAfterBatchRead() {
+    createRecord(STANDARD_KEY)
+    createRecord(QUERY_ROOT_KEY)
+    val selectionSet = setOf(STANDARD_KEY, QUERY_ROOT_KEY)
+    val records = cache.loadRecords(selectionSet, CacheHeaders.builder()
+        .addHeader(ApolloCacheHeaders.EVICT_AFTER_READ, "true").build())
+    assertEquals(records.size, 2)
+    val emptyRecords = cache.loadRecords(selectionSet, CacheHeaders.builder()
+        .addHeader(ApolloCacheHeaders.EVICT_AFTER_READ, "true").build())
+    assertTrue(emptyRecords.isEmpty())
+  }
+
+  @Test
   fun testHeader_noCache() {
     cache.merge(Record.builder(STANDARD_KEY).build(),
         CacheHeaders.builder().addHeader(ApolloCacheHeaders.DO_NOT_STORE, "true").build())
@@ -106,11 +130,12 @@ class SqlNormalizedCacheTest {
 
   @Test
   fun testRecordMerge_noOldRecord() {
-    cache.merge(Record.builder(STANDARD_KEY)
+    val changedKeys = cache.merge(Record.builder(STANDARD_KEY)
         .addField("fieldKey", "valueUpdated")
         .addField("newFieldKey", true).build(), CacheHeaders.NONE)
     val record = cache.selectRecordForKey(STANDARD_KEY)
     assertNotNull(record)
+    assertEquals(expected = setOf("$STANDARD_KEY.fieldKey", "$STANDARD_KEY.newFieldKey"), actual = changedKeys)
     assertEquals(expected = "valueUpdated", actual = record.fields["fieldKey"])
     assertEquals(expected = true, actual = record.fields["newFieldKey"])
   }

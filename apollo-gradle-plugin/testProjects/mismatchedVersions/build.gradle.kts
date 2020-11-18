@@ -10,7 +10,7 @@ buildscript {
     }
     dependencies {
         classpath(groovy.util.Eval.x(project, "x.dep.apollo.plugin"))
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.3.72")
+        classpath(groovy.util.Eval.x(project, "x.dep.kotlin.plugin"))
     }
 }
 

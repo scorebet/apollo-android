@@ -1,8 +1,8 @@
 package com.apollographql.apollo.compiler.codegen.kotlin
 
-import com.apollographql.apollo.compiler.PackageNameProvider
 import com.apollographql.apollo.compiler.ast.CustomTypes
 import com.apollographql.apollo.compiler.ast.EnumType
+import com.apollographql.apollo.compiler.ast.FragmentType
 import com.apollographql.apollo.compiler.ast.InputType
 import com.apollographql.apollo.compiler.ast.ObjectType
 import com.apollographql.apollo.compiler.ast.OperationType
@@ -13,7 +13,7 @@ import com.squareup.kotlinpoet.TypeSpec
 import java.io.File
 
 internal class SchemaCodegen(
-    private val packageNameProvider: PackageNameProvider,
+    private val typesPackageName: String,
     private val generateAsInternal: Boolean = false,
     private val kotlinMultiPlatformProject: Boolean,
     private val enumAsSealedClassPatternFilters: List<Regex>
@@ -21,32 +21,32 @@ internal class SchemaCodegen(
   private var fileSpecs: List<FileSpec> = emptyList()
 
   override fun visit(customTypes: CustomTypes) {
-    fileSpecs = fileSpecs + customTypes.typeSpec(generateAsInternal).fileSpec(packageNameProvider.typesPackageName)
+    fileSpecs = fileSpecs + customTypes.typeSpec(generateAsInternal).fileSpec(typesPackageName)
   }
 
   override fun visit(enumType: EnumType) {
     fileSpecs = fileSpecs + enumType.typeSpec(
         generateAsInternal = generateAsInternal,
         enumAsSealedClassPatternFilters = enumAsSealedClassPatternFilters
-    ).fileSpec(packageNameProvider.typesPackageName)
+    ).fileSpec(typesPackageName)
   }
 
   override fun visit(inputType: InputType) {
     val inputTypeSpec = inputType.typeSpec(generateAsInternal)
-    fileSpecs = fileSpecs + inputTypeSpec.fileSpec(packageNameProvider.typesPackageName)
+    fileSpecs = fileSpecs + inputTypeSpec.fileSpec(typesPackageName)
   }
 
-  override fun visit(fragmentType: ObjectType) {
-    val fragmentTypeSpec = fragmentType.typeSpec(generateAsInternal).let {
+  override fun visit(fragmentType: FragmentType) {
+    val fragmentTypeSpec = fragmentType.objectType.typeSpec(generateAsInternal).let {
       if (kotlinMultiPlatformProject) {
         it.patchKotlinNativeOptionalArrayProperties()
       } else it
     }
-    fileSpecs = fileSpecs + fragmentTypeSpec.fileSpec(packageNameProvider.fragmentsPackageName)
+    fileSpecs = fileSpecs + fragmentTypeSpec.fileSpec(fragmentType.packageName)
   }
 
   override fun visit(operationType: OperationType) {
-    val targetPackage = packageNameProvider.operationPackageName(operationType.filePath)
+    val targetPackage = operationType.packageName
     val operationTypeSpec = operationType.typeSpec(
         targetPackage = targetPackage,
         generateAsInternal = generateAsInternal

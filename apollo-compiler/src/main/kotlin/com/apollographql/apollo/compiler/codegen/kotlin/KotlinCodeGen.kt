@@ -41,9 +41,7 @@ internal object KotlinCodeGen {
   fun deprecatedAnnotation(message: String) = AnnotationSpec
       .builder(Deprecated::class)
       .apply {
-        if (message.isNotBlank()) {
-          addMember("message = %S", message)
-        }
+        addMember("message = %S", message)
       }
       .build()
 
@@ -70,7 +68,7 @@ internal object KotlinCodeGen {
               name = name,
               type = if (isOptional) type.asTypeName().copy(nullable = true) else type.asTypeName()
           )
-          .applyIf(isDeprecated) { addAnnotation(deprecatedAnnotation(deprecationReason)) }
+          .applyIf(deprecationReason != null) { addAnnotation(deprecatedAnnotation(deprecationReason!!)) }
           .applyIf(description.isNotBlank()) { addKdoc("%L\n", description) }
           .initializer(initializer)
           .build()
@@ -399,6 +397,7 @@ internal object KotlinCodeGen {
     }
   }
 
+  // TODO: fix for input object types
   fun Any.toDefaultValueCodeBlock(typeName: TypeName, fieldType: FieldType): CodeBlock = when {
     this is Number -> CodeBlock.of("%L%L", castTo(typeName), if (typeName == LONG) "L" else "")
     fieldType is FieldType.Scalar.Enum -> CodeBlock.of("%T.safeValueOf(%S)", typeName, this)
@@ -432,25 +431,30 @@ internal object KotlinCodeGen {
 
   fun TypeRef.asTypeName() = ClassName(packageName, name.capitalize())
 
-  private fun Map<String, Any?>?.toCode(): CodeBlock? {
+  private fun Any?.toCode(): CodeBlock {
     return when {
-      this == null -> null
-      this.isEmpty() -> CodeBlock.of("emptyMap<%T, Any>()", String::class.asTypeName())
-      else -> CodeBlock.builder()
+      this == null -> CodeBlock.of("null")
+      this is Map<*, *> && this.isEmpty() -> CodeBlock.of("emptyMap<%T, Any>()", String::class.asTypeName())
+      this is Map<*, *> -> CodeBlock.builder()
           .add("mapOf<%T, Any>(\n", String::class.asTypeName())
+          .indent()
+          .add(map { CodeBlock.of("%S to %L", it.key, it.value.toCode()) }.joinToCode(separator = ",\n"))
+          .unindent()
+          .add(")")
+          .build()
+      this is List<*> && this.isEmpty() -> CodeBlock.of("emptyList<Any>()")
+      this is List<*> -> CodeBlock.builder()
+          .add("listOf<Any>(\n")
           .indent()
           .add(map { it.toCode() }.joinToCode(separator = ",\n"))
           .unindent()
           .add(")")
           .build()
+      this is String -> CodeBlock.of("%S", this)
+      this is Number -> CodeBlock.of("%S", this.toString()) // TODO: replace with actual numbers instead of relying on coercion
+      this is Boolean -> CodeBlock.of("%S", this.toString())
+      else -> throw IllegalStateException("Cannot generate code for $this")
     }
-  }
-
-  @Suppress("UNCHECKED_CAST")
-  private fun Map.Entry<String, Any?>.toCode() = when (value) {
-    is Map<*, *> -> CodeBlock.of("%S to %L", key, (value as Map<String, Any>).toCode())
-    null -> CodeBlock.of("%S to null", key)
-    else -> CodeBlock.of("%S to %S", key, value)
   }
 
   fun TypeSpec.patchKotlinNativeOptionalArrayProperties(): TypeSpec {

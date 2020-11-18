@@ -6,6 +6,7 @@ import com.apollographql.apollo.api.internal.ApolloLogger;
 import com.apollographql.apollo.api.internal.Function;
 import com.apollographql.apollo.api.internal.Optional;
 import com.apollographql.apollo.api.internal.ResponseFieldMapper;
+import com.apollographql.apollo.cache.ApolloCacheHeaders;
 import com.apollographql.apollo.cache.normalized.ApolloStore;
 import com.apollographql.apollo.cache.normalized.ApolloStoreOperation;
 import com.apollographql.apollo.cache.normalized.Record;
@@ -36,15 +37,17 @@ public final class ApolloCacheInterceptor implements ApolloInterceptor {
   final ApolloStore apolloStore;
   private final ResponseFieldMapper responseFieldMapper;
   private final Executor dispatcher;
+  private final boolean writeToCacheAsynchronously;
   final ApolloLogger logger;
   volatile boolean disposed;
 
   public ApolloCacheInterceptor(@NotNull ApolloStore apolloStore, @NotNull ResponseFieldMapper responseFieldMapper,
-      @NotNull Executor dispatcher, @NotNull ApolloLogger logger) {
+      @NotNull Executor dispatcher, @NotNull ApolloLogger logger, boolean writeToCacheAsynchronously) {
     this.apolloStore = checkNotNull(apolloStore, "cache == null");
     this.responseFieldMapper = checkNotNull(responseFieldMapper, "responseFieldMapper == null");
     this.dispatcher = checkNotNull(dispatcher, "dispatcher == null");
     this.logger = checkNotNull(logger, "logger == null");
+    this.writeToCacheAsynchronously = writeToCacheAsynchronously;
   }
 
   @Override
@@ -68,19 +71,7 @@ public final class ApolloCacheInterceptor implements ApolloInterceptor {
           chain.proceedAsync(request, dispatcher, new CallBack() {
             @Override public void onResponse(@NotNull InterceptorResponse networkResponse) {
               if (disposed) return;
-
-              try {
-                Set<String> networkResponseCacheKeys = cacheResponse(networkResponse, request);
-                Set<String> rolledBackCacheKeys = rollbackOptimisticUpdates(request);
-                Set<String> changedCacheKeys = new HashSet<>();
-                changedCacheKeys.addAll(rolledBackCacheKeys);
-                changedCacheKeys.addAll(networkResponseCacheKeys);
-                publishCacheKeys(changedCacheKeys);
-              } catch (Exception rethrow) {
-                rollbackOptimisticUpdatesAndPublish(request);
-                throw rethrow;
-              }
-
+              cacheResponseAndPublish(request, networkResponse, writeToCacheAsynchronously);
               callBack.onResponse(networkResponse);
               callBack.onCompleted();
             }
@@ -114,17 +105,20 @@ public final class ApolloCacheInterceptor implements ApolloInterceptor {
         responseNormalizer, request.cacheHeaders);
     Response cachedResponse = apolloStoreOperation.execute();
     if (cachedResponse.getData() != null) {
-      logger.d("Cache HIT for operation %s", request.operation);
+      logger.d("Cache HIT for operation %s", request.operation.name().name());
       return new InterceptorResponse(null, cachedResponse, responseNormalizer.records());
     }
-    logger.d("Cache MISS for operation %s", request.operation);
-    throw new ApolloException(String.format("Cache miss for operation %s", request.operation));
+    logger.d("Cache MISS for operation %s", request.operation.name().name());
+    throw new ApolloException(String.format("Cache miss for operation %s", request.operation.name().name()));
   }
 
   Set<String> cacheResponse(final InterceptorResponse networkResponse,
       final InterceptorRequest request) {
-    if (networkResponse.parsedResponse.isPresent() && networkResponse.parsedResponse.get().hasErrors()) {
-      return Collections.emptySet();
+    if (networkResponse.parsedResponse.isPresent()
+        && networkResponse.parsedResponse.get().hasErrors()
+        && !request.cacheHeaders.hasHeader(ApolloCacheHeaders.STORE_PARTIAL_RESPONSES)
+    ) {
+        return Collections.emptySet();
     }
     final Optional<List<Record>> records = networkResponse.cacheRecords.map(
         new Function<Collection<Record>, List<Record>>() {
@@ -151,6 +145,32 @@ public final class ApolloCacheInterceptor implements ApolloInterceptor {
     } catch (Exception e) {
       logger.e("Failed to cache operation response", e);
       return Collections.emptySet();
+    }
+  }
+
+  void cacheResponseAndPublish(InterceptorRequest request, InterceptorResponse networkResponse, boolean async) {
+    if (async) {
+      dispatcher.execute(new Runnable() {
+        @Override public void run() {
+          cacheResponseAndPublishSynchronously(request, networkResponse);
+        }
+      });
+    } else {
+      cacheResponseAndPublishSynchronously(request, networkResponse);
+    }
+  }
+
+  void cacheResponseAndPublishSynchronously(InterceptorRequest request, InterceptorResponse networkResponse) {
+    try {
+      Set<String> networkResponseCacheKeys = cacheResponse(networkResponse, request);
+      Set<String> rolledBackCacheKeys = rollbackOptimisticUpdates(request);
+      Set<String> changedCacheKeys = new HashSet<>();
+      changedCacheKeys.addAll(rolledBackCacheKeys);
+      changedCacheKeys.addAll(networkResponseCacheKeys);
+      publishCacheKeys(changedCacheKeys);
+    } catch (Exception rethrow) {
+      rollbackOptimisticUpdatesAndPublish(request);
+      throw rethrow;
     }
   }
 

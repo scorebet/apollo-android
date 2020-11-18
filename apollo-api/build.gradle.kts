@@ -24,18 +24,22 @@ kotlin {
     withJava()
   }
 
+  js {
+    useCommonJs()
+    browser()
+    nodejs()
+  }
+
   sourceSets {
     val commonMain by getting {
       dependencies {
-        implementation(kotlin("stdlib-common"))
-        api(groovy.util.Eval.x(project, "x.dep.okio.okioMultiplatform"))
+        api(groovy.util.Eval.x(project, "x.dep.okio"))
       }
     }
 
     val jvmMain by getting {
       dependsOn(commonMain)
       dependencies {
-        implementation(kotlin("stdlib"))
       }
     }
 
@@ -45,6 +49,19 @@ kotlin {
 
     val iosSimMain by getting {
       dependsOn(iosMain)
+    }
+
+    val jsMain by getting {
+      dependsOn(commonMain)
+      dependencies {
+        implementation(npm("big.js", "5.2.2"))
+      }
+    }
+
+    val jsTest by getting {
+      dependencies {
+        implementation(kotlin("test-js"))
+      }
     }
 
     val commonTest by getting {
@@ -69,4 +86,15 @@ tasks.withType<Checkstyle> {
   exclude("**/BufferedSourceJsonReader.java")
   exclude("**/JsonScope.java")
   exclude("**/JsonUtf8Writer.java")
+}
+
+tasks.named("javadoc").configure {
+  /**
+   * Somehow Javadoc fails when I removed the `@JvmSynthetic` annotation from `InputFieldWriter.ListItemWriter.writeList`
+   * It fails with `javadoc: error - String index out of range: -1`
+   * Javadoc from JDK 13 works fine
+   * I'm not sure how to fix it so this ignores the error. The uploaded javadoc.jar will be truncated and only contain the
+   * classes that have been written successfully before Javadoc fails.
+   */
+  (this as Javadoc).isFailOnError = false
 }

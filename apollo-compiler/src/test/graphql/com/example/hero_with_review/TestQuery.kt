@@ -23,6 +23,7 @@ import com.apollographql.apollo.api.internal.Throws
 import com.example.hero_with_review.type.Episode
 import kotlin.Any
 import kotlin.Array
+import kotlin.Boolean
 import kotlin.Int
 import kotlin.String
 import kotlin.Suppress
@@ -87,6 +88,17 @@ data class TestQuery(
     scalarTypeAdapters = DEFAULT
   )
 
+  override fun composeRequestBody(
+    autoPersistQueries: Boolean,
+    withQueryDocument: Boolean,
+    scalarTypeAdapters: ScalarTypeAdapters
+  ): ByteString = OperationRequestBodyComposer.compose(
+    operation = this,
+    autoPersistQueries = autoPersistQueries,
+    withQueryDocument = withQueryDocument,
+    scalarTypeAdapters = scalarTypeAdapters
+  )
+
   /**
    * Represents a review for a movie
    */
@@ -148,8 +160,14 @@ data class TestQuery(
               "variableName" to "ep"),
             "review" to mapOf<String, Any>(
               "stars" to "5",
-              "listOfEnums" to "[JEDI, EMPIRE, NEWHOPE]",
-              "listOfStringNonOptional" to "[1, 2, 3]",
+              "listOfEnums" to listOf<Any>(
+                "JEDI",
+                "EMPIRE",
+                "NEWHOPE"),
+              "listOfStringNonOptional" to listOf<Any>(
+                "1",
+                "2",
+                "3"),
               "favoriteColor" to mapOf<String, Any>(
                 "red" to "1",
                 "blue" to "1.0"))), true, null)

@@ -21,7 +21,7 @@ public final class WebSocketSubscriptionTransport implements SubscriptionTranspo
   final AtomicReference<WebSocket> webSocket = new AtomicReference<>();
   final AtomicReference<WebSocketListener> webSocketListener = new AtomicReference<>();
 
-  WebSocketSubscriptionTransport(Request webSocketRequest, WebSocket.Factory webSocketConnectionFactory,
+  public WebSocketSubscriptionTransport(Request webSocketRequest, WebSocket.Factory webSocketConnectionFactory,
       Callback callback) {
     this.webSocketRequest = webSocketRequest;
     this.webSocketConnectionFactory = webSocketConnectionFactory;
@@ -52,7 +52,8 @@ public final class WebSocketSubscriptionTransport implements SubscriptionTranspo
   public void send(OperationClientMessage message) {
     WebSocket socket = webSocket.get();
     if (socket == null) {
-      throw new IllegalStateException("Not connected");
+      callback.onFailure(new IllegalStateException("Send attempted on closed connection"));
+      return;
     }
     socket.send(message.toJsonString());
   }

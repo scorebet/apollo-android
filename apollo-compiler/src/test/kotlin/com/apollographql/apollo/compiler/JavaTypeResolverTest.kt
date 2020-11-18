@@ -9,19 +9,21 @@ import org.junit.Test
 import java.util.Date
 
 class JavaTypeResolverTest {
-  private val packageNameProvider = object : PackageNameProvider {
-    override val fragmentsPackageName: String = ""
-    override val typesPackageName: String = ""
-    override fun operationPackageName(filePath: String): String = ""
-  }
   private val defaultContext = CodeGenerationContext(
       reservedTypeNames = emptyList(),
       typeDeclarations = emptyList(),
-      packageNameProvider = packageNameProvider,
       customTypeMap = emptyMap(),
-      operationIdGenerator = OperationIdGenerator.Sha256(),
+      operationOutput = emptyMap(),
       nullableValueType = NullableValueType.APOLLO_OPTIONAL,
-      ir = CodeGenerationIR(emptyList(), emptyList(), emptyList()),
+      ir = CodeGenerationIR(
+          emptyList(),
+          emptyList(),
+          emptyList(),
+          emptySet(),
+          emptySet(),
+          emptySet(),
+          emptySet(),
+          ""),
       useSemanticNaming = false,
       generateModelBuilder = false,
       useJavaBeansSemanticNaming = false,

@@ -2,6 +2,7 @@ package com.apollographql.apollo.internal;
 
 import com.apollographql.apollo.ApolloMutationCall;
 import com.apollographql.apollo.ApolloQueryCall;
+import com.apollographql.apollo.api.Mutation;
 import com.apollographql.apollo.api.Operation;
 import com.apollographql.apollo.api.OperationName;
 import com.apollographql.apollo.api.Query;
@@ -22,7 +23,8 @@ import com.apollographql.apollo.exception.ApolloParseException;
 import com.apollographql.apollo.fetcher.ResponseFetcher;
 import com.apollographql.apollo.interceptor.ApolloInterceptor;
 import com.apollographql.apollo.interceptor.ApolloInterceptorChain;
-import com.apollographql.apollo.internal.interceptor.ApolloAutoPersistedQueryInterceptor;
+import com.apollographql.apollo.interceptor.ApolloInterceptorFactory;
+import com.apollographql.apollo.interceptor.ApolloAutoPersistedOperationInterceptor;
 import com.apollographql.apollo.internal.interceptor.ApolloCacheInterceptor;
 import com.apollographql.apollo.internal.interceptor.ApolloParseInterceptor;
 import com.apollographql.apollo.internal.interceptor.ApolloServerInterceptor;
@@ -35,7 +37,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
@@ -65,6 +66,8 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
   final ApolloLogger logger;
   final ApolloCallTracker tracker;
   final List<ApolloInterceptor> applicationInterceptors;
+  final List<ApolloInterceptorFactory> applicationInterceptorFactories;
+  final ApolloInterceptorFactory autoPersistedOperationsInterceptorFactory;
   final List<OperationName> refetchQueryNames;
   final List<Query> refetchQueries;
   final Optional<QueryReFetcher> queryReFetcher;
@@ -74,6 +77,7 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
   final Optional<Operation.Data> optimisticUpdates;
   final boolean useHttpGetMethodForQueries;
   final boolean useHttpGetMethodForPersistedQueries;
+  final boolean writeToNormalizedCacheAsynchronously;
 
   public static <T> Builder<T> builder() {
     return new Builder<>();
@@ -94,6 +98,8 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
     dispatcher = builder.dispatcher;
     logger = builder.logger;
     applicationInterceptors = builder.applicationInterceptors;
+    applicationInterceptorFactories = builder.applicationInterceptorFactories;
+    autoPersistedOperationsInterceptorFactory = builder.autoPersistedOperationsInterceptorFactory;
     refetchQueryNames = builder.refetchQueryNames;
     refetchQueries = builder.refetchQueries;
     tracker = builder.tracker;
@@ -112,15 +118,17 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
           .dispatcher(builder.dispatcher)
           .logger(builder.logger)
           .applicationInterceptors(builder.applicationInterceptors)
+          .applicationInterceptorFactories(builder.applicationInterceptorFactories)
+          .autoPersistedOperationsInterceptorFactory(builder.autoPersistedOperationsInterceptorFactory)
           .callTracker(builder.tracker)
           .build());
     }
     useHttpGetMethodForQueries = builder.useHttpGetMethodForQueries;
     enableAutoPersistedQueries = builder.enableAutoPersistedQueries;
     useHttpGetMethodForPersistedQueries = builder.useHttpGetMethodForPersistedQueries;
-    interceptorChain = prepareInterceptorChain(operation);
     optimisticUpdates = builder.optimisticUpdates;
-
+    writeToNormalizedCacheAsynchronously = builder.writeToNormalizedCacheAsynchronously;
+    interceptorChain = prepareInterceptorChain(operation);
   }
 
   @Override public void enqueue(@Nullable final Callback<T> responseCallback) {
@@ -141,7 +149,6 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
         .fetchFromCache(false)
         .optimisticUpdates(optimisticUpdates)
         .useHttpGetMethodForQueries(useHttpGetMethodForQueries)
-        .autoPersistQueries(enableAutoPersistedQueries)
         .build();
     interceptorChain.proceedAsync(request, dispatcher, interceptorCallbackProxy());
   }
@@ -293,7 +300,7 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
     };
   }
 
-  public Builder<T> toBuilder() {
+  @NotNull public Builder<T> toBuilder() {
     return RealApolloCall.<T>builder()
         .operation(operation)
         .serverUrl(serverUrl)
@@ -309,12 +316,16 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
         .dispatcher(dispatcher)
         .logger(logger)
         .applicationInterceptors(applicationInterceptors)
+        .applicationInterceptorFactories(applicationInterceptorFactories)
+        .autoPersistedOperationsInterceptorFactory(autoPersistedOperationsInterceptorFactory)
         .tracker(tracker)
         .refetchQueryNames(refetchQueryNames)
         .refetchQueries(refetchQueries)
         .enableAutoPersistedQueries(enableAutoPersistedQueries)
+        .useHttpGetMethodForQueries(useHttpGetMethodForQueries)
         .useHttpGetMethodForPersistedQueries(useHttpGetMethodForPersistedQueries)
-        .optimisticUpdates(optimisticUpdates);
+        .optimisticUpdates(optimisticUpdates)
+        .writeToNormalizedCacheAsynchronously(writeToNormalizedCacheAsynchronously);
   }
 
   @SuppressWarnings("ResultOfMethodCallIgnored")
@@ -375,11 +386,34 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
     HttpCachePolicy.Policy httpCachePolicy = operation instanceof Query ? this.httpCachePolicy : null;
     ResponseFieldMapper responseFieldMapper = responseFieldMapperFactory.create(operation);
 
-    List<ApolloInterceptor> interceptors = new ArrayList<>(applicationInterceptors);
+    List<ApolloInterceptor> interceptors = new ArrayList<>();
+
+    for (ApolloInterceptorFactory factory : applicationInterceptorFactories) {
+      ApolloInterceptor interceptor = factory.newInterceptor(logger, operation);
+      if (interceptor != null) {
+        interceptors.add(interceptor);
+      }
+    }
+    interceptors.addAll(applicationInterceptors);
+
     interceptors.add(responseFetcher.provideInterceptor(logger));
-    interceptors.add(new ApolloCacheInterceptor(apolloStore, responseFieldMapper, dispatcher, logger));
-    if (operation instanceof Query && enableAutoPersistedQueries) {
-      interceptors.add(new ApolloAutoPersistedQueryInterceptor(logger, useHttpGetMethodForPersistedQueries));
+    interceptors.add(new ApolloCacheInterceptor(
+        apolloStore,
+        responseFieldMapper,
+        dispatcher,
+        logger,
+        writeToNormalizedCacheAsynchronously));
+    if (autoPersistedOperationsInterceptorFactory != null) {
+      ApolloInterceptor interceptor = autoPersistedOperationsInterceptorFactory.newInterceptor(logger, operation);
+      if (interceptor != null) {
+        interceptors.add(interceptor);
+      }
+    } else {
+      if (enableAutoPersistedQueries && (operation instanceof Query || operation instanceof Mutation)) {
+        interceptors.add(new ApolloAutoPersistedOperationInterceptor(
+            logger,
+            useHttpGetMethodForPersistedQueries && !(operation instanceof Mutation)));
+      }
     }
     interceptors.add(new ApolloParseInterceptor(httpCache, apolloStore.networkResponseNormalizer(), responseFieldMapper,
         scalarTypeAdapters, logger));
@@ -389,7 +423,7 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
     return new RealApolloInterceptorChain(interceptors);
   }
 
-  public static final class Builder<T> {
+  public static final class Builder<T> implements ApolloQueryCall.Builder<T>, ApolloMutationCall.Builder<T> {
     Operation operation;
     HttpUrl serverUrl;
     Call.Factory httpCallFactory;
@@ -404,6 +438,8 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
     Executor dispatcher;
     ApolloLogger logger;
     List<ApolloInterceptor> applicationInterceptors;
+    List<ApolloInterceptorFactory> applicationInterceptorFactories;
+    ApolloInterceptorFactory autoPersistedOperationsInterceptorFactory;
     List<OperationName> refetchQueryNames = emptyList();
     List<Query> refetchQueries = emptyList();
     ApolloCallTracker tracker;
@@ -411,6 +447,7 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
     Optional<Operation.Data> optimisticUpdates = Optional.absent();
     boolean useHttpGetMethodForQueries;
     boolean useHttpGetMethodForPersistedQueries;
+    boolean writeToNormalizedCacheAsynchronously;
 
     public Builder<T> operation(Operation operation) {
       this.operation = operation;
@@ -432,11 +469,6 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
       return this;
     }
 
-    public Builder<T> httpCachePolicy(HttpCachePolicy.Policy httpCachePolicy) {
-      this.httpCachePolicy = httpCachePolicy;
-      return this;
-    }
-
     public Builder<T> responseFieldMapperFactory(ResponseFieldMapperFactory responseFieldMapperFactory) {
       this.responseFieldMapperFactory = responseFieldMapperFactory;
       return this;
@@ -452,18 +484,33 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
       return this;
     }
 
-    public Builder<T> responseFetcher(ResponseFetcher responseFetcher) {
-      this.responseFetcher = responseFetcher;
-      return this;
-    }
-
-    public Builder<T> cacheHeaders(CacheHeaders cacheHeaders) {
+    @NotNull @Override public Builder<T> cacheHeaders(@NotNull CacheHeaders cacheHeaders) {
       this.cacheHeaders = cacheHeaders;
       return this;
     }
 
-    public Builder<T> requestHeaders(RequestHeaders requestHeaders) {
+    @NotNull @Override public Builder<T> httpCachePolicy(@NotNull HttpCachePolicy.Policy httpCachePolicy) {
+      this.httpCachePolicy = httpCachePolicy;
+      return this;
+    }
+
+    @NotNull @Override public Builder<T> responseFetcher(@NotNull ResponseFetcher responseFetcher) {
+      this.responseFetcher = responseFetcher;
+      return this;
+    }
+
+    @NotNull @Override public Builder<T> requestHeaders(@NotNull RequestHeaders requestHeaders) {
       this.requestHeaders = requestHeaders;
+      return this;
+    }
+
+    @NotNull @Override public Builder<T> refetchQueryNames(@NotNull List<OperationName> refetchQueryNames) {
+      this.refetchQueryNames = new ArrayList<>(refetchQueryNames);
+      return this;
+    }
+
+    @NotNull @Override public Builder<T> refetchQueries(@NotNull List<Query> refetchQueries) {
+      this.refetchQueries = new ArrayList<>(refetchQueries);
       return this;
     }
 
@@ -487,14 +534,13 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
       return this;
     }
 
-    public Builder<T> refetchQueryNames(List<OperationName> refetchQueryNames) {
-      this.refetchQueryNames = refetchQueryNames != null ? new ArrayList<>(refetchQueryNames)
-          : Collections.<OperationName>emptyList();
+    public Builder<T> applicationInterceptorFactories(List<ApolloInterceptorFactory> applicationInterceptorFactories) {
+      this.applicationInterceptorFactories = applicationInterceptorFactories;
       return this;
     }
 
-    public Builder<T> refetchQueries(List<Query> refetchQueries) {
-      this.refetchQueries = refetchQueries != null ? new ArrayList<>(refetchQueries) : Collections.<Query>emptyList();
+    public Builder<T> autoPersistedOperationsInterceptorFactory(ApolloInterceptorFactory interceptorFactory) {
+      this.autoPersistedOperationsInterceptorFactory = interceptorFactory;
       return this;
     }
 
@@ -518,10 +564,15 @@ public final class RealApolloCall<T> implements ApolloQueryCall<T>, ApolloMutati
       return this;
     }
 
+    public Builder<T> writeToNormalizedCacheAsynchronously(boolean writeToNormalizedCacheAsynchronously) {
+      this.writeToNormalizedCacheAsynchronously = writeToNormalizedCacheAsynchronously;
+      return this;
+    }
+
     Builder() {
     }
 
-    public RealApolloCall<T> build() {
+    @NotNull public RealApolloCall<T> build() {
       return new RealApolloCall<>(this);
     }
   }
