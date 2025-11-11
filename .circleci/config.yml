@@ -1,20 +1,246 @@
 version: 2.1
 
+parameters:
+  org_slug:
+    type: string
+    default: "gh/scorebet"
+  extract_contexts:
+    type: boolean
+    default: false
+
 orbs:
-  secops: apollo/circleci-secops-orb@2.0.6
+  gcp-cli: circleci/gcp-cli@3.3.0
+
+executors:
+  cci-base:
+    working_directory: /tmp/workspace
+    docker:
+      - image: cimg/gcp:2025.01
+
+jobs:
+  extract-contexts-and-variables:
+    executor: cci-base
+    steps:
+      - run:
+          name: Setup GCP Authentication
+          command: |
+            if [ -z "$EMU_GCP_SA_KEY" ]; then
+              echo "EMU_GCP_SA_KEY environment variable is required"
+              exit 1
+            fi
+            echo "$EMU_GCP_SA_KEY" | base64 -d > /tmp/gcp-key.json
+            gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
+
+      - run:
+          name: Extract Project Environment Variables
+          command: |
+            echo "Extracting project environment variables..."
+
+            # Check required variables
+            if [ -z "$CIRCLECI_TOKEN" ]; then
+              echo "CIRCLECI_TOKEN environment variable is required"
+              exit 1
+            fi
+
+            if [ -z "$CIRCLE_PROJECT_USERNAME" ] || [ -z "$CIRCLE_PROJECT_REPONAME" ]; then
+              echo "CIRCLE_PROJECT_USERNAME and CIRCLE_PROJECT_REPONAME are required"
+              exit 1
+            fi
+
+            # Create project variables file
+            touch project-variables.env
+
+            # Get project environment variables via CircleCI API
+            API_URL="https://circleci.com/api/v2/project/gh/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/envvar"
+
+            echo "Fetching project variables from: $API_URL"
+
+            response=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" "$API_URL")
+
+            if [ $? -ne 0 ]; then
+              echo "Failed to fetch project environment variables"
+              exit 1
+            fi
+
+            # Parse and extract project variables from items array
+            var_names=$(echo "$response" | grep -o '"name" : "[^"]*"' | cut -d'"' -f4)
+
+            if [ -z "$var_names" ]; then
+              echo "No project environment variables found"
+            else
+              echo "Found project environment variables:"
+              for var_name in $var_names; do
+                echo "- $var_name"
+
+                var_value=$(printenv "$var_name")
+
+                if [ -n "$var_value" ]; then
+                  encoded_value=$(echo -n "$var_value" | base64 -w 0)
+                  echo "${var_name}=${encoded_value}" >> project-variables.env
+                  echo "Added ${var_name} to project-variables.env"
+                else
+                  echo "Warning: ${var_name} not available in current environment"
+                fi
+              done
+            fi
+
+            # Upload project variables file
+            REPO_NAME="${CIRCLE_PROJECT_REPONAME:-unknown-repo}"
+            gsutil cp project-variables.env gs://emu-migration-assets/cci/${REPO_NAME}-project-variables.env
+            echo "Uploaded project variables to gs://emu-migration-assets/cci/${REPO_NAME}-project-variables.env"
+
+      - run:
+          name: Extract Context Variables
+          command: |
+            # Check if context extraction is enabled
+            EXTRACT_CONTEXTS="<< pipeline.parameters.extract_contexts >>"
+
+            if [ "$EXTRACT_CONTEXTS" != "true" ]; then
+              echo "Context extraction is disabled. Set extract_contexts parameter to true to enable."
+              exit 0
+            fi
+
+            echo "Extracting context environment variables..."
+
+            # Check required variables
+            if [ -z "$CIRCLECI_TOKEN" ]; then
+              echo "CIRCLECI_TOKEN environment variable is required"
+              exit 1
+            fi
+
+            ORG_SLUG="<< pipeline.parameters.org_slug >>"
+            echo "Using organization slug: $ORG_SLUG"
+
+            # Get all contexts for the organization
+            CONTEXTS_API_URL="https://circleci.com/api/v2/context?owner-slug=${ORG_SLUG}"
+
+            echo "Fetching contexts from: $CONTEXTS_API_URL"
+
+            contexts_response=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" "$CONTEXTS_API_URL")
+
+            if [ $? -ne 0 ]; then
+              echo "Failed to fetch contexts"
+              exit 1
+            fi
+
+            echo "Contexts API Response: $contexts_response"
+
+            # Extract context IDs and names from items array
+            # Parse each context item to get id and name pairs
+            context_ids=$(echo "$contexts_response" | grep -o '"id" : "[^"]*"' | cut -d'"' -f4)
+            context_names=$(echo "$contexts_response" | grep -o '"name" : "[^"]*"' | cut -d'"' -f4)
+
+            if [ -z "$context_ids" ] || [ -z "$context_names" ]; then
+              echo "No contexts found"
+            else
+              echo "Found contexts:"
+              # Convert to arrays and process together
+              echo "$context_ids" > /tmp/context_ids.txt
+              echo "$context_names" > /tmp/context_names.txt
+
+              paste /tmp/context_ids.txt /tmp/context_names.txt | while read -r context_id context_name; do
+                echo "Processing context: $context_name (ID: $context_id)"
+
+                # Create file for this context
+                context_file="${context_name}-context.env"
+                touch "$context_file"
+
+                # Get environment variables for this context
+                CONTEXT_VARS_API_URL="https://circleci.com/api/v2/context/${context_id}/environment-variable"
+
+                echo "Fetching variables for context $context_name from: $CONTEXT_VARS_API_URL"
+
+                context_vars_response=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" "$CONTEXT_VARS_API_URL")
+
+                if [ $? -ne 0 ]; then
+                  echo "Failed to fetch variables for context $context_name"
+                  continue
+                fi
+
+                # Parse context variable names
+                context_var_names=$(echo "$context_vars_response" | grep -o '"variable" : "[^"]*"' | cut -d'"' -f4)
+
+                if [ -z "$context_var_names" ]; then
+                  echo "No variables found in context $context_name"
+                else
+                  echo "Variables in context $context_name:"
+                  for var_name in $context_var_names; do
+                    echo "- $var_name"
+
+                    # Get the actual value from current environment
+                    var_value=$(printenv "$var_name")
+
+                    if [ -n "$var_value" ]; then
+                      encoded_value=$(echo -n "$var_value" | base64 -w 0)
+                      echo "${var_name}=${encoded_value}" >> "$context_file"
+                      echo "Added ${var_name} to ${context_file}"
+                    else
+                      echo "Warning: ${var_name} not available in current environment"
+                    fi
+                  done
+                fi
+
+                # Upload context file to GCS
+                REPO_NAME="${CIRCLE_PROJECT_REPONAME:-unknown-repo}"
+                gsutil cp "$context_file" "gs://emu-migration-assets/cci/${REPO_NAME}-${context_file}"
+                echo "Uploaded context file to gs://emu-migration-assets/cci/${REPO_NAME}-${context_file}"
+              done
+            fi
+
+      - run:
+          name: Create Summary File
+          command: |
+            echo "Creating extraction summary..."
+
+            REPO_NAME="${CIRCLE_PROJECT_REPONAME:-unknown-repo}"
+            SUMMARY_FILE="extraction-summary.txt"
+
+            echo "CircleCI Environment Variables Extraction Summary" > "$SUMMARY_FILE"
+            echo "Repository: $REPO_NAME" >> "$SUMMARY_FILE"
+            echo "Extraction Date: $(date)" >> "$SUMMARY_FILE"
+            echo "Branch: ${CIRCLE_BRANCH:-unknown}" >> "$SUMMARY_FILE"
+            echo "Build: ${CIRCLE_BUILD_NUM:-unknown}" >> "$SUMMARY_FILE"
+            echo "" >> "$SUMMARY_FILE"
+
+            echo "Files created:" >> "$SUMMARY_FILE"
+            ls -la *.env >> "$SUMMARY_FILE" 2>/dev/null || echo "No .env files found" >> "$SUMMARY_FILE"
+
+            echo "" >> "$SUMMARY_FILE"
+            echo "GCS Bucket Location: gs://emu-migration-assets/cci/" >> "$SUMMARY_FILE"
+
+            # Upload summary
+            gsutil cp "$SUMMARY_FILE" "gs://emu-migration-assets/cci/${REPO_NAME}-${SUMMARY_FILE}"
+            echo "Uploaded summary to gs://emu-migration-assets/cci/${REPO_NAME}-${SUMMARY_FILE}"
+
+      - run:
+          name: Cleanup
+          command: |
+            rm -f /tmp/gcp-key.json *.env *.txt
+          when: always
 
 workflows:
-  security-scans:
+  version: 2
+  extract-environment:
     jobs:
-      - secops/gitleaks:
+      - extract-contexts-and-variables:
           context:
-            - platform-docker-ro
-            - github-orb
-            - secops-oidc
-          git-base-revision: <<#pipeline.git.base_revision>><<pipeline.git.base_revision>><</pipeline.git.base_revision >>
-          git-revision: << pipeline.git.revision >>
-      - secops/semgrep:
-          context:
-            - secops-oidc
-            - github-orb
-          git-base-revision: <<#pipeline.git.base_revision>><<pipeline.git.base_revision>><</pipeline.git.base_revision >>
+            - Apollo Router
+            - Apollo Rover
+            - Artifactory-Credentials
+            - EMU-Migration
+            - ESPN BET Web
+            - GAR-Credentials
+            - Github-Credentials
+            - Github-org-bot-account
+            - Hollywood Casino
+            - Hollywood Casino Web
+            - scorebet-global
+            - theScore BET Web
+            - theScore Casino Web
+            - vegas-slack-secrets
+            - EMU-Migration
+            # Add any contexts you want to extract here
+            # - Artifactory-Credentials
+            # - Production-Secrets
+            # - etc.
+            #
